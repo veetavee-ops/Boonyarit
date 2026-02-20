@@ -77,3 +77,5 @@ project_code_for_ai.json
 media/
 # ไฟล์เก็บข้อความ (จาก server.js เดิม)
 messages.json
+
+test.js

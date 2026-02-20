@@ -51,7 +51,7 @@ export async function checkAuth() {
       headers: { 'Authorization': `Bearer ${token}` }
     })
     return res.data.admin
-  } catch (error) {
+  } catch  {
     localStorage.removeItem('token')
     throw new Error('Authentication failed')
   }

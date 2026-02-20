@@ -13,7 +13,7 @@ export function useSocket(groupId, date, onNewMessage) {
 
   useEffect(() => {
     // Get Socket.IO URL from environment variable or use default
-    const socketUrl = import.meta.env.VITE_API_URL || 'https://backend-icy-feather-3591.fly.dev'
+    const socketUrl = import.meta.env.VITE_API_URL;
 
     // Create socket connection if not exists
     if (!socket) {
@@ -31,7 +31,7 @@ export function useSocket(groupId, date, onNewMessage) {
         reconnectAttempts.current = 0
       })
 
-      socket.on('disconnect', (reason) => {
+      socket.on('disconnect', () => {
         // Disconnected
       })
 
@@ -44,7 +44,7 @@ export function useSocket(groupId, date, onNewMessage) {
         }
       })
 
-      socket.on('reconnect', (attemptNumber) => {
+      socket.on('reconnect', () => {
         // Reconnected
       })
     }

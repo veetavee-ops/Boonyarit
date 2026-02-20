@@ -18,7 +18,16 @@ const IMAGE_GROUP_TIMEOUT = 5000; // 5 seconds
  * LINE Webhook endpoint
  * Receives events from LINE Messaging API
  */
-router.post('/', line.middleware(lineConfig), async (req, res) => {
+
+const webhookMiddleware = process.env.NODE_ENV === 'production'
+    ? line.middleware(lineConfig)
+    : (req, res, next) => {
+        if (Buffer.isBuffer(req.body)) {
+            req.body = JSON.parse(req.body.toString());
+        }
+        next();
+    };
+router.post('/', webhookMiddleware, async (req, res) => {
     const timestamp = new Date().toISOString();
     console.log(`[${timestamp}] 🔔 Webhook received - ${req.body.events?.length || 0} events`);
 
@@ -30,6 +39,7 @@ router.post('/', line.middleware(lineConfig), async (req, res) => {
         res.status(500).json({ error: 'Webhook processing failed' });
     }
 });
+
 
 async function handleEvent(event, io) {
     if (event.type !== 'message') return;
@@ -54,6 +64,28 @@ async function handleEvent(event, io) {
         } catch (e) {
             console.error('❌ Group Error:', e.message);
         }
+        // try {
+        //     let group = await Group.findByPk(groupId);
+        //     if (!group) {
+        //         let groupName = 'Unknown Group';
+        //         let pictureUrl = null;
+
+        //         // ลอง fetch จาก LINE API ก่อน
+        //         try {
+        //             const summary = await client.getGroupSummary(groupId);
+        //             groupName = summary.groupName;
+        //             pictureUrl = summary.pictureUrl;
+        //         } catch (apiErr) {
+        //             // ✅ ถ้า LINE API fail (เช่น mock groupId) ให้ใช้ fallback
+        //             console.warn(`⚠️ Cannot fetch group summary for ${groupId}, using fallback`);
+        //         }
+
+        //         // ✅ upsert ไม่ว่าจะได้ข้อมูลจาก LINE หรือ fallback
+        //         await Group.upsert({ groupId, groupName, pictureUrl });
+        //     }
+        // } catch (e) {
+        //     console.error('❌ Group Error:', e.message);
+        // }
     }
 
     if (message.type === 'image') {
@@ -80,6 +112,26 @@ async function handleImageMessage(event, userId, groupId, sourceType, message, i
         console.error('❌ User Error (in handleImageMessage):', e.message);
         throw e;
     }
+    // try {
+    //     let user = await User.findByPk(userId);
+    //     if (!user) {
+    //         let displayName = 'Unknown';
+    //         let pictureUrl = null;
+
+    //         try {
+    //             const profile = await getProfile(event.source);
+    //             displayName = profile.displayName;
+    //             pictureUrl = profile.pictureUrl;
+    //         } catch (apiErr) {
+    //             console.warn(`⚠️ Cannot fetch profile for ${userId}, using fallback`);
+    //         }
+
+    //         await User.upsert({ userId, displayName, pictureUrl });
+    //     }
+    // } catch (e) {
+    //     console.error('❌ User Error:', e.message);
+    //     throw e;
+    // }
 
     const buffer = await downloadImageBuffer(message.id);
 
@@ -190,6 +242,26 @@ async function handleNonImageMessage(event, userId, groupId, sourceType, message
         // ถ้าบันทึก User ไม่ได้ ก็ไม่ต้องบันทึก Message
         throw e;
     }
+    // try {
+    //     let user = await User.findByPk(userId);
+    //     if (!user) {
+    //         let displayName = 'Unknown';
+    //         let pictureUrl = null;
+
+    //         try {
+    //             const profile = await getProfile(event.source);
+    //             displayName = profile.displayName;
+    //             pictureUrl = profile.pictureUrl;
+    //         } catch (apiErr) {
+    //             console.warn(`⚠️ Cannot fetch profile for ${userId}, using fallback`);
+    //         }
+
+    //         await User.upsert({ userId, displayName, pictureUrl });
+    //     }
+    // } catch (e) {
+    //     console.error('❌ User Error:', e.message);
+    //     throw e;
+    // }
 
     let dbPayload = {
         messageId: message.id,
