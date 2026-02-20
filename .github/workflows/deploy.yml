@@ -41,6 +41,6 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           password: ${{ secrets.SERVER_PASSWORD }}
           script: |
-            cd /home/lineoa-dev
+            cd /home/worker/lineoa-de
             docker compose pull
             docker compose up -d
