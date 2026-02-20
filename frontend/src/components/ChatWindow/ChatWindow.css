@@ -1,0 +1,180 @@
+.main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  position: relative;
+}
+
+/* Header */
+.header {
+  height: 64px;
+  /* Slightly taller */
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  z-index: 10;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.group-avatar-lg {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.group-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.group-sub {
+  font-size: 12px;
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+.search {
+  padding: 8px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  width: 240px;
+  font-size: 13px;
+  outline: none;
+  font-family: 'Kanit', sans-serif;
+  background: #f8f9fa;
+  transition: all 0.2s;
+}
+
+.search:focus {
+  border-color: var(--primary-color);
+  background: white;
+  width: 260px;
+  /* Slight expand */
+  box-shadow: 0 0 0 2px rgba(6, 199, 85, 0.1);
+}
+
+/* Messages Area */
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 24px;
+  background-color: #e6e9ed;
+  /* LINE Chat BG Light */
+  display: flex;
+  flex-direction: column;
+}
+
+.empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: rgb(0, 0, 0);
+  gap: 12px;
+  opacity: 0.8;
+}
+
+.empty-icon {
+  font-size: 48px;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.1));
+}
+
+/* Stats Footer */
+.stats {
+  padding: 12px 24px;
+  border-top: 1px solid var(--border-color);
+  display: flex;
+  gap: 24px;
+  background: white;
+}
+
+.stat {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Mobile Responsive ChatWindow */
+@media screen and (max-width: 768px) {
+  .header {
+    padding: 0 16px;
+    height: 60px;
+    gap: 12px;
+  }
+
+  .header-left {
+    flex: 1;
+    overflow: hidden;
+    /* For text truncation */
+  }
+
+  .group-title {
+    font-size: 16px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .group-sub {
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .search {
+    width: 40px;
+    /* Collapse to icon only or small width initially */
+    padding: 8px;
+    border-radius: 50%;
+    /* Circle button style if we wanted, but keeping input for now */
+    border-radius: 8px;
+  }
+
+  /* Better search approach for mobile: small icon that expands or just smaller width */
+  .search {
+    width: 120px;
+  }
+
+  .search:focus {
+    width: 160px;
+    position: absolute;
+    right: 16px;
+    z-index: 20;
+  }
+
+  .messages {
+    padding: 16px;
+  }
+
+  .stats {
+    padding: 8px 16px;
+    gap: 16px;
+    overflow-x: auto;
+    /* Allow scroll if too many stats */
+  }
+}

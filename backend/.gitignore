@@ -1,0 +1,79 @@
+# --- Dependencies ---
+node_modules/
+jspm_packages/
+web_modules/
+.npm
+.eslintcache
+.stylelintcache
+*.tsbuildinfo
+
+# --- Build Outputs ---
+# Vite / React build
+dist/
+dist-ssr/
+build/
+# Express / Node build (ถ้ามีการใช้ TypeScript)
+out/
+
+# --- Logs ---
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- Runtime & Diagnostic ---
+pids
+*.pid
+*.seed
+*.pid.lock
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# --- Testing ---
+coverage/
+*.lcov
+.nyc_output
+
+# --- IDE / Editor ---
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# --- OS Metadata ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Environment Variables ---
+.env
+.env.local
+.env.*.local
+
+# --- Debug & Test Scripts ---
+debug-*.js
+test-*.js
+
+# --- Other Ignored Files ---
+project_code_for_ai.txt
+project_code_for_ai.json
+
+# --- Others ---
+.cache/
+.parcel-cache
+.turbo
+.vercel
+
+# ไฟล์รูป/วิดีโอ/เสียงจาก LINE
+media/
+# ไฟล์เก็บข้อความ (จาก server.js เดิม)
+messages.json

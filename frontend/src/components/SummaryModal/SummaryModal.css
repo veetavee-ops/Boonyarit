@@ -1,0 +1,376 @@
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(8px);
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-content {
+  background: white;
+  border-radius: 20px;
+  width: 90%;
+  max-width: 700px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-header {
+  padding: 28px 32px;
+  border-bottom: 1px solid #e1e8ed;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 20px 20px 0 0;
+}
+
+.modal-header-content {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.modal-title-icon {
+  width: 48px;
+  height: 48px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  color: white;
+}
+
+.modal-subtitle {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.modal-close {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  font-size: 24px;
+  color: white;
+  cursor: pointer;
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.modal-close:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(1.05);
+}
+
+.modal-body {
+  flex: 1;
+  overflow-y: auto;
+  background: #f8f9fa;
+}
+
+/* Loading State */
+.modal-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  padding: 60px 40px;
+}
+
+.spinner-container {
+  position: relative;
+  width: 64px;
+  height: 64px;
+}
+
+.spinner {
+  width: 64px;
+  height: 64px;
+  border: 4px solid #e1e8ed;
+  border-top-color: #667eea;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.loading-text {
+  font-size: 16px;
+  font-weight: 500;
+  color: #1a1a1a;
+  margin: 0;
+}
+
+.loading-note {
+  font-size: 13px;
+  color: #8899a6;
+  margin: 0;
+}
+
+/* Error State */
+.modal-error {
+  padding: 40px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.error-icon {
+  font-size: 48px;
+}
+
+.error-text {
+  color: #c62828;
+  font-size: 15px;
+  margin: 0;
+}
+
+.btn-retry {
+  padding: 10px 24px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: 'Kanit', sans-serif;
+}
+
+.btn-retry:hover {
+  background: #5568d3;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* Summary Content */
+.modal-summary {
+  display: flex;
+  flex-direction: column;
+}
+
+.summary-content {
+  padding: 32px;
+  flex: 1;
+}
+
+.summary-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 32px 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #667eea;
+}
+
+.section-icon {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.section-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0;
+}
+
+.summary-heading {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 24px 0 12px;
+}
+
+.summary-paragraph {
+  font-size: 15px;
+  line-height: 1.7;
+  color: #333;
+  margin: 12px 0;
+}
+
+.summary-paragraph strong {
+  font-weight: 600;
+  color: #1a1a1a;
+}
+
+.summary-list {
+  margin: 16px 0;
+  padding-left: 0;
+  list-style: none;
+}
+
+.summary-list.numbered {
+  counter-reset: item;
+}
+
+.summary-list.numbered > li {
+  counter-increment: item;
+  position: relative;
+  padding: 12px 16px 12px 48px;
+  margin-bottom: 8px;
+  background: white;
+  border-radius: 10px;
+  border-left: 3px solid #667eea;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.summary-list.numbered > li::before {
+  content: counter(item);
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.summary-list.bullet > li {
+  position: relative;
+  padding: 10px 16px 10px 32px;
+  margin-bottom: 8px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.summary-list.bullet > li::before {
+  content: '•';
+  position: absolute;
+  left: 14px;
+  color: #667eea;
+  font-size: 18px;
+  font-weight: bold;
+}
+
+.summary-sublist {
+  margin: 8px 0 0;
+  padding-left: 20px;
+  list-style: none;
+}
+
+.summary-sublist li {
+  position: relative;
+  padding: 6px 0 6px 20px;
+  color: #555;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.summary-sublist li::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  color: #8899a6;
+  font-size: 14px;
+}
+
+.summary-divider {
+  border: none;
+  height: 2px;
+  background: linear-gradient(to right, transparent, #e1e8ed, transparent);
+  margin: 28px 0;
+}
+
+/* Footer */
+.summary-footer {
+  padding: 20px 32px;
+  background: white;
+  border-top: 1px solid #e1e8ed;
+  border-radius: 0 0 20px 20px;
+}
+
+.summary-meta {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: #555;
+  font-weight: 500;
+  padding: 8px 16px;
+  background: #f8f9fa;
+  border-radius: 20px;
+}
+
+.meta-icon {
+  font-size: 16px;
+}
+
+/* Scrollbar */
+.modal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+  background: #667eea;
+  border-radius: 4px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+  background: #5568d3;
+}
