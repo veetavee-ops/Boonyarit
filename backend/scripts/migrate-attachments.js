@@ -76,12 +76,15 @@ async function migrate() {
                     }
                 }
 
-                // Update ข้อความใน DB
-                metadata.imageCount = localPaths.length;
-                metadata.localPaths = localPaths;
-                metadata.migratedFromBlob = true; // Flag ไว้ดูดเล่นๆ
+                // Update ข้อความใน DB (ต้องสร้าง Object ใหม่ ไม่งั้น Sequelize จะไม่รู้ว่ามันถูกแก้ไข)
+                const newMetadata = {
+                    ...metadata,
+                    imageCount: localPaths.length,
+                    localPaths: localPaths,
+                    migratedFromBlob: true
+                };
 
-                await message.update({ metadata });
+                await message.update({ metadata: newMetadata });
                 successCount++;
 
             } catch (err) {
