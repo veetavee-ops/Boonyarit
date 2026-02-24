@@ -20,19 +20,22 @@ const app = express();
 // ===== Middleware =====
 app.use(cors(corsOptions));
 app.use(cookieParser());
-app.use('/webhook', express.raw({ type: '*/*' }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 app.use('/media', express.static(path.join(__dirname, 'media')));
 app.use(logger);
 
-// ===== Routes =====
+// ⚠️ สำคัญมาก: Webhook ต้องถูกตีผ่า (Parse) ด้วย LINE Middleware เพื่อคำนวณ Signature
+// ดังนั้นต้องเด้งมารับตรงนี้ "ก่อน" ที่ express.json() จะดึง Body ไปกินจนหมด
 app.use('/webhook', webhookRoute);
+
+// สำหรับ API เส้นอื่นๆ รับ Body เป็น JSON ตามปกติ
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// ===== Routes =====
 app.use('/api/auth', authRoute);
 app.use('/api', adminRoute);
 app.use('/api/groups', groupsRoute);
 app.use('/api/messages', messagesRoute);
-
 app.use('/api/dates', datesRoute);
 
 // ===== Error Handler =====

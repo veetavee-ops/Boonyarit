@@ -42,12 +42,7 @@ const IMAGE_GROUP_TIMEOUT = 5000; // 5 seconds
  */
 const webhookMiddleware = process.env.NODE_ENV === 'production'
     ? line.middleware(lineConfig)
-    : (req, res, next) => {
-        if (Buffer.isBuffer(req.body)) {
-            req.body = JSON.parse(req.body.toString());
-        }
-        next();
-    };
+    : express.json();
 
 router.post('/', webhookMiddleware, async (req, res) => {
     try {
