@@ -83,8 +83,13 @@ export default function ChatWindow({
 
   const stats = {
     total: filtered.length,
-    images: filtered.filter(m => m.messageType === 'image').length,
-    users: new Set(filtered.map(m => m.userId)).size,
+    images: filtered.reduce((sum, m) => {
+      if (m.messageType === 'image') {
+        return sum + (m.metadata?.imageCount || 1)
+      }
+      return sum
+    }, 0),
+    users: currentGroup?.isPrivate ? 1 : new Set(filtered.map(m => m.userId)).size,
   }
 
   return (
