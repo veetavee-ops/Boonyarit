@@ -2,15 +2,18 @@
 
 :root {
   /* Brand Colors */
-  --primary-color: #06C755; /* LINE Green */
+  --primary-color: #06C755;
+  /* LINE Green */
   --primary-hover: #05b34c;
   --secondary-color: #1a1a1a;
 
   /* Backgrounds */
   --bg-app: #f0f2f5;
   --bg-sidebar: #ffffff;
-  --bg-chat: #8c939d; /* Fallback */
-  --bg-chat-pattern: #99aab5; /* Placeholder for pattern */
+  --bg-chat: #8c939d;
+  /* Fallback */
+  --bg-chat-pattern: #99aab5;
+  /* Placeholder for pattern */
 
   /* Text */
   --text-primary: #1a1a1a;
@@ -75,13 +78,13 @@ body {
 .header-brand-icon {
   display: flex;
   align-items: center;
-  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.2));
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.2));
 }
 
 .header-brand-name {
   font-size: 14px;
   font-weight: 700;
-  color: rgba(255,255,255,0.95);
+  color: rgba(255, 255, 255, 0.95);
   letter-spacing: 0.3px;
   white-space: nowrap;
 }
@@ -162,7 +165,9 @@ body {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ── Scrollbar Styling ────────────────────────────────────────── */
@@ -210,19 +215,45 @@ body {
 /* ── Responsive ───────────────────────────────────────────────── */
 @media screen and (max-width: 768px) {
   .app-header {
-    padding: 0 16px;
+    padding: 0 12px;
+    gap: 8px;
   }
 
   .menu-btn {
     display: block;
   }
 
+  .header-brand {
+    position: static;
+    transform: none;
+    flex: 1;
+    justify-content: flex-start;
+    min-width: 0;
+  }
+
   .header-brand-name {
-    font-size: 13px;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .user-info {
+    gap: 6px;
   }
 
   .user-info span {
     display: none;
+  }
+
+  .user-chip {
+    padding: 4px 8px;
+  }
+
+  .btn-logout {
+    padding: 4px 8px;
+    font-size: 11px;
+    gap: 4px;
   }
 
   .app-body {

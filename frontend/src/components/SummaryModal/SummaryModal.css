@@ -14,8 +14,13 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
 }
 
 .modal-content {
@@ -35,6 +40,7 @@
     transform: translateY(30px);
     opacity: 0;
   }
+
   to {
     transform: translateY(0);
     opacity: 1;
@@ -47,7 +53,7 @@
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, #06C755 0%, #04a846 100%);
   border-radius: 20px 20px 0 0;
 }
 
@@ -128,13 +134,15 @@
   width: 64px;
   height: 64px;
   border: 4px solid #e1e8ed;
-  border-top-color: #667eea;
+  border-top-color: #06C755;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .loading-text {
@@ -172,7 +180,7 @@
 
 .btn-retry {
   padding: 10px 24px;
-  background: #667eea;
+  background: #06C755;
   color: white;
   border: none;
   border-radius: 8px;
@@ -184,9 +192,9 @@
 }
 
 .btn-retry:hover {
-  background: #5568d3;
+  background: #05b34c;
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  box-shadow: 0 4px 12px rgba(6, 199, 85, 0.4);
 }
 
 /* Summary Content */
@@ -206,7 +214,7 @@
   gap: 12px;
   margin: 32px 0 16px;
   padding-bottom: 12px;
-  border-bottom: 2px solid #667eea;
+  border-bottom: 2px solid #06C755;
 }
 
 /* หัวข้อวันที่ (📅) สำหรับ multi-day summary */
@@ -214,15 +222,15 @@
   margin: 28px 0 12px;
   padding: 10px 16px;
   padding-bottom: 10px;
-  background: linear-gradient(90deg, #f0f4ff 0%, #fafbff 100%);
-  border-left: 4px solid #667eea;
+  background: linear-gradient(90deg, #f0fdf4 0%, #f8fafc 100%);
+  border-left: 4px solid #06C755;
   border-bottom: none;
   border-radius: 0 10px 10px 0;
 }
 
 .summary-section--date .section-title {
   font-size: 16px;
-  color: #3730a3;
+  color: #166534;
 }
 
 .summary-section--date .section-icon {
@@ -270,18 +278,18 @@
   counter-reset: item;
 }
 
-.summary-list.numbered > li {
+.summary-list.numbered>li {
   counter-increment: item;
   position: relative;
   padding: 12px 16px 12px 48px;
   margin-bottom: 8px;
   background: white;
   border-radius: 10px;
-  border-left: 3px solid #667eea;
+  border-left: 3px solid #06C755;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
 }
 
-.summary-list.numbered > li::before {
+.summary-list.numbered>li::before {
   content: counter(item);
   position: absolute;
   left: 14px;
@@ -289,7 +297,7 @@
   transform: translateY(-50%);
   width: 26px;
   height: 26px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
+  background: linear-gradient(135deg, #06C755, #04a846);
   color: white;
   border-radius: 6px;
   display: flex;
@@ -299,7 +307,7 @@
   font-weight: 600;
 }
 
-.summary-list.bullet > li {
+.summary-list.bullet>li {
   position: relative;
   padding: 10px 16px 10px 32px;
   margin-bottom: 8px;
@@ -308,11 +316,11 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-.summary-list.bullet > li::before {
+.summary-list.bullet>li::before {
   content: '•';
   position: absolute;
   left: 14px;
-  color: #667eea;
+  color: #06C755;
   font-size: 18px;
   font-weight: bold;
 }
@@ -387,10 +395,10 @@
 }
 
 .modal-body::-webkit-scrollbar-thumb {
-  background: #667eea;
+  background: #c5ced6;
   border-radius: 4px;
 }
 
 .modal-body::-webkit-scrollbar-thumb:hover {
-  background: #5568d3;
+  background: #9ab0ba;
 }

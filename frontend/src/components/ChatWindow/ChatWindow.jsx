@@ -197,7 +197,7 @@ export default function ChatWindow({
             if (isYesterday) msgDate = `เมื่อวานนี้, ${msgDate?.split(',')[1] || msgDate}`
 
             return (
-              <div key={msg.id} style={{ display: 'contents' }}>
+              <div key={msg.id || i} style={{ display: 'contents' }}>
                 {showDateSep && (
                   <div className="date-separator">
                     <span className="date-separator-label">{msgDate}</span>
