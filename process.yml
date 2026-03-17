@@ -1,0 +1,6 @@
+apps:
+  - script: src/index.js
+    name: "fung-api"
+    env:
+      NODE_ENV: production
+      PORT: 3001

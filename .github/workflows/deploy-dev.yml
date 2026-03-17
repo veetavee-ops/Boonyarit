@@ -2,7 +2,7 @@ name: Deploy LINE OA (Dev)
 
 on:
   push:
-    branches: [dev]
+    branches: [dev2]
 
 jobs:
   deploy:
