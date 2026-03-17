@@ -1,22 +1,16 @@
-# Docker Compose สำหรับ deploy บน server
-# ใช้กับ GitHub Actions: cd /home/worker/mytasks && docker compose pull && docker compose up -d
-#
-# ก่อน deploy: สร้าง .env บน server ที่ /home/worker/mytasks/.env
-#   DATABASE_URL=postgresql://user:pass@host:5432/mytasks
-#
-# ลำดับความสำคัญ (production): ค่าใน environment ด้านล่างจะ override ค่าจาก env_file
-# แอปใช้ dotenv.config({ override: false }) ใน production จึงไม่ให้ .env ใน container เขียนทับค่าที่ Docker inject มา
-
 services:
   app:
-    image: sotuseng/fung:latest
-    container_name: fung-app
+    image: sotuseng/lineoa:latest
+    container_name: lineoa-app
     restart: unless-stopped
     ports:
-      - "8001:3001"
+      - "3000:3000"
     env_file:
       - .env
     environment:
       - NODE_ENV=production
-      - PORT=3001
-  
+    volumes:
+      - lineoa-media:/app/media
+
+volumes:
+  lineoa-media:

@@ -18,22 +18,18 @@ app.locals.io = io;
 setupSockets(io);
 
 // ===== DB Sync & Start =====
-sequelize.sync({ alter: true })
+const syncOptions = process.env.NODE_ENV === 'production' ? {} : { alter: true };
+sequelize.sync(syncOptions)
   .then(() => {
-    console.log('✅ Database synchronized');
+    console.log('Database synchronized');
     const PORT = process.env.PORT || 3000;
     server.listen(PORT, '0.0.0.0', () => {
-      console.log('='.repeat(50));
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📡 API: http://localhost:${PORT}`);
-      console.log(`🔌 Socket.IO ready`);
-      console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log('='.repeat(50));
+      console.log(`Server running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
       startCleanupCron();
     });
   })
   .catch((err) => {
-    console.error('❌ Database sync error:', err);
+    console.error('Database sync error:', err);
     process.exit(1);
   });
 

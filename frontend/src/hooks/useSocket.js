@@ -15,7 +15,7 @@ export function useSocket(groupId, onNewMessage) {
   })
 
   useEffect(() => {
-    const socketUrl = import.meta.env.VITE_API_URL
+    const socketUrl = import.meta.env.VITE_API_URL || window.location.origin
 
     if (!socket) {
       socket = io(socketUrl, {

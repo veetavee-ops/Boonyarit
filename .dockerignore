@@ -1,0 +1,16 @@
+node_modules/
+.git/
+.github/
+*.md
+.env
+.env.*
+backend/node_modules/
+backend/media/
+backend/www/
+backend/gcs-key.json
+frontend/node_modules/
+frontend/dist/
+test/
+.gitignore
+.gitattributes
+process.yml
