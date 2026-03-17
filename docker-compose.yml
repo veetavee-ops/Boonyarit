@@ -1,6 +1,6 @@
 services:
   app:
-    image: sotuseng/lineoa:latest
+    image: sotuseng/lineoa:${IMAGE_TAG:-latest}
     container_name: lineoa-app
     restart: unless-stopped
     ports:
