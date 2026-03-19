@@ -277,7 +277,7 @@ function MediaModal({ media, onClose }) {
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export default function MessageBubble({ msg, prevMsg }) {
+export default function MessageBubble({ msg, prevMsg, allMessages }) {
   const [lightboxImg, setLightboxImg] = useState(null)
   const [mediaModal, setMediaModal] = useState(null)
   const [linkUrl, setLinkUrl] = useState(null)
@@ -308,6 +308,9 @@ export default function MessageBubble({ msg, prevMsg }) {
   const isNewSender = !prevMsg || prevUser.userId !== currentUser.userId
   const userColor = getColor(currentUser.displayName)
 
+  const quotedMessageId = msg.metadata?.quotedMessageId
+  const quotedMessage = quotedMessageId && allMessages ? allMessages.find(m => m.messageId === quotedMessageId) : null
+
   const getMinute = (ts) => { const d = new Date(ts); return `${d.getHours()}:${d.getMinutes()}` }
   const isTimeBreak = !isNewSender && prevMsg && getMinute(msg.timestamp) !== getMinute(prevMsg.timestamp)
 
@@ -334,8 +337,55 @@ export default function MessageBubble({ msg, prevMsg }) {
           <div className="msg-bubble-row">
             <div className="msg-bubble-content">
 
-              {/* ── TEXT ── */}
-              {msg.messageType === 'text' && (
+              {/* ── REPLY (Quote + Text integrated) ── */}
+              {quotedMessage && (() => {
+                const qColor = getColor(quotedMessage.user?.displayName || 'Unknown')
+                const qImgUrl = quotedMessage.messageType === 'image' && quotedMessage.metadata?.localPaths?.[0]
+                  ? mediaUrl(quotedMessage.metadata.localPaths[0])
+                  : null
+                const qName = quotedMessage.user?.displayName || 'Unknown'
+                const qPreview = quotedMessage.messageType === 'text'
+                  ? quotedMessage.text
+                  : { image: '📷 รูปภาพ', sticker: '😊 สติกเกอร์', video: '🎬 วิดีโอ', audio: '🎤 เสียง', file: '📎 ไฟล์', location: '📍 ตำแหน่ง' }[quotedMessage.messageType] || '📎 ไฟล์'
+
+                return (
+                  <>
+                    <div className="msg-reply-label">
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="10" height="10"><path d="M10 9V5l-7 7 7 7v-4.1c5 0 8.5 1.6 11 5.1-1-5-4-10-11-11z"/></svg>
+                      {currentUser.displayName} ตอบกลับ {qName}
+                    </div>
+                    <div className="msg-reply-bubble">
+                    <div 
+                      className="msg-quote"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        const el = document.querySelector(`[data-id="${quotedMessage.id}"]`)
+                        if (el) {
+                          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                          el.classList.add('highlight-quote')
+                          setTimeout(() => el.classList.remove('highlight-quote'), 2000)
+                        }
+                      }}
+                    >
+                      <div className="msg-quote-accent" style={{ background: qColor }} />
+                      <div className="msg-quote-inner">
+                        <span className="msg-quote-name" style={{ color: qColor }}>{qName}</span>
+                        <span className="msg-quote-preview">{qPreview}</span>
+                      </div>
+                      {qImgUrl && <img src={qImgUrl} alt="" className="msg-quote-thumb" />}
+                    </div>
+                    {msg.messageType === 'text' && (
+                      <div className="msg-reply-text">
+                        {msg.text ? parseTextWithLinks(msg.text, openLink) : '(ไม่มีข้อความ)'}
+                      </div>
+                    )}
+                    </div>
+                  </>
+                )
+              })()}
+              {/* ── TEXT (only when NOT a reply) ── */}
+              {msg.messageType === 'text' && !quotedMessage && (
                 <div className="msg-text">
                   {msg.text ? parseTextWithLinks(msg.text, openLink) : '(ไม่มีข้อความ)'}
                 </div>
@@ -489,17 +539,109 @@ export default function MessageBubble({ msg, prevMsg }) {
         </div>{/* end msg-content */}
       </div>
 
-      {/* ✅ Image Lightbox */}
-      {lightboxImg && (
-        <div className="lightbox-overlay" onClick={closeLightbox}>
-          <button className="lightbox-close" onClick={closeLightbox} aria-label="ปิด">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
-              <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-            </svg>
-          </button>
-          <img className="lightbox-img" src={lightboxImg} alt="ภาพขยาย" onClick={e => e.stopPropagation()} />
-        </div>
-      )}
+      {/* ✅ Image Lightbox with Zoom */}
+      {lightboxImg && (() => {
+        const handleWheel = (e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          const imgEl = e.currentTarget.querySelector('.lightbox-img')
+          if (!imgEl) return
+          const currentScale = parseFloat(imgEl.dataset.zoom || '1')
+          const delta = e.deltaY > 0 ? -0.15 : 0.15
+          const newScale = Math.min(Math.max(currentScale + delta, 0.5), 5)
+          imgEl.dataset.zoom = newScale
+          imgEl.style.transform = `scale(${newScale}) translate(${imgEl.dataset.panX || 0}px, ${imgEl.dataset.panY || 0}px)`
+          // update zoom display
+          const display = imgEl.parentElement.querySelector('.lightbox-zoom-level')
+          if (display) display.textContent = `${Math.round(newScale * 100)}%`
+        }
+
+        const handleZoomBtn = (dir) => {
+          const imgEl = document.querySelector('.lightbox-img')
+          if (!imgEl) return
+          const currentScale = parseFloat(imgEl.dataset.zoom || '1')
+          const newScale = Math.min(Math.max(currentScale + dir * 0.25, 0.5), 5)
+          imgEl.dataset.zoom = newScale
+          imgEl.style.transform = `scale(${newScale}) translate(${imgEl.dataset.panX || 0}px, ${imgEl.dataset.panY || 0}px)`
+          const display = document.querySelector('.lightbox-zoom-level')
+          if (display) display.textContent = `${Math.round(newScale * 100)}%`
+        }
+
+        const handleReset = () => {
+          const imgEl = document.querySelector('.lightbox-img')
+          if (!imgEl) return
+          imgEl.dataset.zoom = '1'
+          imgEl.dataset.panX = '0'
+          imgEl.dataset.panY = '0'
+          imgEl.style.transform = 'scale(1) translate(0px, 0px)'
+          const display = document.querySelector('.lightbox-zoom-level')
+          if (display) display.textContent = '100%'
+        }
+
+        const handleMouseDown = (e) => {
+          if (e.button !== 0) return
+          const imgEl = e.currentTarget
+          const scale = parseFloat(imgEl.dataset.zoom || '1')
+          if (scale <= 1) return
+          e.preventDefault()
+          const startX = e.clientX
+          const startY = e.clientY
+          const initPanX = parseFloat(imgEl.dataset.panX || '0')
+          const initPanY = parseFloat(imgEl.dataset.panY || '0')
+
+          const onMove = (ev) => {
+            const dx = (ev.clientX - startX) / scale
+            const dy = (ev.clientY - startY) / scale
+            imgEl.dataset.panX = initPanX + dx
+            imgEl.dataset.panY = initPanY + dy
+            imgEl.style.transform = `scale(${scale}) translate(${initPanX + dx}px, ${initPanY + dy}px)`
+          }
+          const onUp = () => {
+            window.removeEventListener('mousemove', onMove)
+            window.removeEventListener('mouseup', onUp)
+          }
+          window.addEventListener('mousemove', onMove)
+          window.addEventListener('mouseup', onUp)
+        }
+
+        return (
+          <div className="lightbox-overlay" onClick={closeLightbox} onWheel={handleWheel}>
+            {/* Close button */}
+            <button className="lightbox-close" onClick={closeLightbox} aria-label="ปิด">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+              </svg>
+            </button>
+
+            {/* Zoom controls */}
+            <div className="lightbox-controls" onClick={e => e.stopPropagation()}>
+              <button className="lightbox-btn" onClick={() => handleZoomBtn(-1)} aria-label="Zoom out">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M19 13H5v-2h14v2z" /></svg>
+              </button>
+              <span className="lightbox-zoom-level">100%</span>
+              <button className="lightbox-btn" onClick={() => handleZoomBtn(1)} aria-label="Zoom in">
+                <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" /></svg>
+              </button>
+              <button className="lightbox-btn" onClick={handleReset} aria-label="Reset zoom" style={{ marginLeft: 4 }}>
+                <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" /></svg>
+              </button>
+            </div>
+
+            {/* Image */}
+            <img
+              className="lightbox-img"
+              src={lightboxImg}
+              alt="ภาพขยาย"
+              data-zoom="1"
+              data-pan-x="0"
+              data-pan-y="0"
+              onClick={e => e.stopPropagation()}
+              onDoubleClick={handleReset}
+              onMouseDown={handleMouseDown}
+            />
+          </div>
+        )
+      })()}
 
       {/* ✅ Media Modal */}
       {mediaModal && <MediaModal media={mediaModal} onClose={closeMedia} />}

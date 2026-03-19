@@ -121,6 +121,106 @@
   border-top-left-radius: 4px;
 }
 
+/* ─── Reply Label ─────────────────────────────────────────────────────────── */
+.msg-reply-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #94a3b8;
+  padding-left: 1px;
+  margin-bottom: 2px;
+}
+
+.msg-reply-label svg {
+  opacity: 0.6;
+  transform: scaleX(-1);
+}
+
+/* ─── Reply Bubble (integrated quote + text) ──────────────────────────────── */
+.msg-reply-bubble {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  overflow: hidden;
+}
+
+.msg.new .msg-reply-bubble {
+  border-top-left-radius: 4px;
+}
+
+.msg-quote {
+  display: flex;
+  align-items: stretch;
+  margin: 5px 5px 0;
+  border-radius: 8px;
+  background: #f4f6f8;
+  cursor: pointer;
+  overflow: hidden;
+  transition: background 0.12s;
+}
+
+.msg-quote:hover {
+  background: #eef0f3;
+}
+
+.msg-quote-accent {
+  width: 3px;
+  flex-shrink: 0;
+}
+
+.msg-quote-inner {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.msg-quote-name {
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.msg-quote-preview {
+  font-size: 12px;
+  color: #8899a6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.35;
+}
+
+.msg-quote-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  flex-shrink: 0;
+  border-radius: 0 8px 8px 0;
+}
+
+.msg-reply-text {
+  padding: 6px 12px 8px;
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+}
+
+/* Highlight flash */
+@keyframes flashHighlight {
+  0%   { background: rgba(6, 182, 212, 0.2); }
+  100% { background: transparent; }
+}
+
+.highlight-quote {
+  animation: flashHighlight 1.5s ease-out;
+  border-radius: 6px;
+}
+
 /* ─── Images Grid ─────────────────────────────────────────────────────────── */
 .msg-images {
   display: grid;
@@ -276,13 +376,8 @@
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to   { opacity: 1; }
 }
 
 .lightbox-img {
@@ -291,20 +386,20 @@
   object-fit: contain;
   border-radius: 8px;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
-  animation: zoomIn 0.15s ease;
-  cursor: default;
+  animation: zoomInAnim 0.15s ease;
+  cursor: grab;
+  transition: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
-@keyframes zoomIn {
-  from {
-    transform: scale(0.92);
-    opacity: 0;
-  }
+.lightbox-img:active {
+  cursor: grabbing;
+}
 
-  to {
-    transform: scale(1);
-    opacity: 1;
-  }
+@keyframes zoomInAnim {
+  from { transform: scale(0.92); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
 }
 
 .lightbox-close {
@@ -328,6 +423,50 @@
 
 .lightbox-close:hover {
   background: rgba(255, 255, 255, 0.25);
+}
+
+/* Zoom controls bar */
+.lightbox-controls {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  padding: 6px 10px;
+  border-radius: 24px;
+  z-index: 10000;
+}
+
+.lightbox-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: white;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.lightbox-btn:hover {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.lightbox-zoom-level {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 40px;
+  text-align: center;
+  user-select: none;
 }
 
 /* ─── Video Thumbnail ─────────────────────────────────────────────────────── */

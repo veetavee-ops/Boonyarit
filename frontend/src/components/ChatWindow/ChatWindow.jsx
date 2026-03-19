@@ -203,7 +203,11 @@ export default function ChatWindow({
                     <span className="date-separator-label">{msgDate}</span>
                   </div>
                 )}
-                <MessageBubble msg={msg} prevMsg={filtered[i - 1]} />
+                <MessageBubble 
+                  msg={msg} 
+                  prevMsg={filtered[i - 1]}
+                  allMessages={messages}
+                />
               </div>
             )
           })}

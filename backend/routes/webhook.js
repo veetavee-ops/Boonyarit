@@ -76,6 +76,11 @@ async function handleEvent(event, io) {
         }
     }
 
+    // Debug: log quotedMessageId if present
+    if (message.quotedMessageId) {
+        console.log(`💬 Reply detected! quotedMessageId: ${message.quotedMessageId}, messageId: ${message.id}, type: ${message.type}`);
+    }
+
     if (message.type === 'image') {
         return await handleImageMessage(event, userId, groupId, sourceType, message, io);
     } else {
@@ -117,7 +122,10 @@ async function handleImageMessage(event, userId, groupId, sourceType, message, i
             timestamp: new Date(event.timestamp),
             userId, groupId, sourceType,
             text: null,
-            metadata: { imageCount: 1 }
+            metadata: { 
+                imageCount: 1, 
+                ...(message.quotedMessageId && { quotedMessageId: message.quotedMessageId })
+            }
         });
         pendingImageGroups.set(groupKey, {
             messageId: newMessage.id,
@@ -177,7 +185,9 @@ async function handleNonImageMessage(event, userId, groupId, sourceType, message
         messageType: message.type,
         timestamp: new Date(event.timestamp),
         userId, groupId, sourceType,
-        metadata: {}
+        metadata: {
+            ...(message.quotedMessageId && { quotedMessageId: message.quotedMessageId })
+        }
     };
 
     switch (message.type) {

@@ -12,13 +12,9 @@ import SummaryModal from './components/SummaryModal/SummaryModal'
 import './App.css'
 
 export default function App() {
+  // ✅ ALL hooks must be declared unconditionally before any early returns
   const [admin, setAdmin] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
-
-  // 🔒 Check for hidden registration route (Simple Router)
-  if (window.location.pathname === '/register-admin') {
-    return <RegisterPage />
-  }
 
   const today = format(new Date(), 'yyyy-MM-dd')
   const [selectedDate, setSelectedDate] = useState(today)
@@ -31,16 +27,11 @@ export default function App() {
   const [daySummary, setDaySummary] = useState(null)
   const [summaryLoading, setSummaryLoading] = useState(false)
   const [summaryError, setSummaryError] = useState(null)
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
   const { groups, loading: groupsLoading } = useGroups(refreshKey)
   const { messages, loading: msgsLoading, hasMore, loadingMore, loadMore, addMessage } = useMessages(selectedGroup)
 
-
-  /* 
-    ✅ Handle incoming real-time messages (Global Listener)
-    - If message belongs to current chat -> Add to view
-    - Always -> Trigger sidebar refresh (to show new group or reorder list)
-  */
   const handleNewMessage = useCallback((newMessage) => {
     // Group: use groupId directly. Private: match the "private_name_" format from groups API
     const msgGroupId = newMessage.groupId
@@ -57,7 +48,6 @@ export default function App() {
   }, [addMessage, selectedGroup])
 
   useSocket(selectedGroup, handleNewMessage)
-
 
   useEffect(() => {
     checkAuth()
@@ -79,7 +69,10 @@ export default function App() {
     }
   }, [groups, groupsLoading, selectedGroup])
 
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+  // 🔒 Check for hidden registration route (Simple Router) — AFTER all hooks
+  if (window.location.pathname === '/register-admin') {
+    return <RegisterPage />
+  }
 
   const handleLogin = (adminData) => {
     setAdmin(adminData)
