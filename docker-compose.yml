@@ -11,3 +11,9 @@ services:
       - NODE_ENV=production
     volumes:
       - /home/worker/lineoa-dev/media:/app/media
+    networks:
+      - db-network
+
+networks:
+  db-network:
+    external: true
