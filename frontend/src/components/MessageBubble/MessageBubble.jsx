@@ -519,12 +519,10 @@ export default function MessageBubble({ msg, prevMsg, allMessages }) {
     prevMsg &&
     getMinute(msg.timestamp) !== getMinute(prevMsg.timestamp);
 
-  // Build full URL — supports legacy localPath (/media/...) and new gcsPath (media/...)
   const mediaUrl = (path) => {
     if (!path) return null;
     if (path.startsWith("http")) return path;
-    if (path.startsWith("/")) return `${API_BASE}${path}`; // legacy local
-    return `${API_BASE}/api/media?path=${encodeURIComponent(path)}`; // GCS
+    return `${API_BASE}/api/media?path=${encodeURIComponent(path)}`;
   };
 
   return (
