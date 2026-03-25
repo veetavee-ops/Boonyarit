@@ -79,6 +79,7 @@ async function getSignedUrl(gcsPath, expiresInMinutes = 60) {
     const file = bucket.file(gcsPath);
 
     const [url] = await file.getSignedUrl({
+        version: 'v2',
         action: 'read',
         expires: Date.now() + expiresInMinutes * 60 * 1000,
     });
