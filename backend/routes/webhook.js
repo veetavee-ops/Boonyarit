@@ -1,26 +1,15 @@
 const express = require('express');
 const router = express.Router();
 const line = require('@line/bot-sdk');
-const fs = require('fs');
-const path = require('path');
 
 const { Message, User, Group } = require('../models/index');
 const { getProfile, client } = require('../services/lineService');
+const { uploadToGCS, buildGCSPath } = require('../services/gcsService');
 
 const lineConfig = {
     channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
     channelSecret: process.env.CHANNEL_SECRET,
 };
-
-// ─── Media Directory Setup ─────────────────────────────────────────────────────
-function ensureDir(dirPath) {
-    if (!fs.existsSync(dirPath)) fs.mkdirSync(dirPath, { recursive: true });
-}
-const MEDIA_DIR = path.join(__dirname, '..', 'media');
-ensureDir(path.join(MEDIA_DIR, 'images'));
-ensureDir(path.join(MEDIA_DIR, 'videos'));
-ensureDir(path.join(MEDIA_DIR, 'audios'));
-ensureDir(path.join(MEDIA_DIR, 'files'));
 
 // ─── Download helper ───────────────────────────────────────────────────────────
 async function downloadAsBuffer(messageId) {
@@ -76,7 +65,6 @@ async function handleEvent(event, io) {
         }
     }
 
-    // Debug: log quotedMessageId if present
     if (message.quotedMessageId) {
         console.log(`💬 Reply detected! quotedMessageId: ${message.quotedMessageId}, messageId: ${message.id}, type: ${message.type}`);
     }
@@ -88,7 +76,7 @@ async function handleEvent(event, io) {
     }
 }
 
-// ─── Image Message — grouped then saved to disk ────────────────────────────────
+// ─── Image Message — grouped then uploaded to GCS ─────────────────────────────
 async function handleImageMessage(event, userId, groupId, sourceType, message, io) {
     const groupKey = `${userId}-${groupId || 'private'}`;
 
@@ -122,8 +110,8 @@ async function handleImageMessage(event, userId, groupId, sourceType, message, i
             timestamp: new Date(event.timestamp),
             userId, groupId, sourceType,
             text: null,
-            metadata: { 
-                imageCount: 1, 
+            metadata: {
+                imageCount: 1,
                 ...(message.quotedMessageId && { quotedMessageId: message.quotedMessageId })
             }
         });
@@ -139,16 +127,15 @@ async function saveImageGroup(groupKey, io) {
     const pending = pendingImageGroups.get(groupKey);
     if (!pending) return;
     try {
-        const localPaths = [];
+        const gcsPaths = [];
         for (const img of pending.images) {
-            const fileName = `${img.lineMessageId}.jpg`;
-            const filePath = path.join(MEDIA_DIR, 'images', fileName);
-            fs.writeFileSync(filePath, img.buffer);
-            localPaths.push(`/media/images/${fileName}`);
+            const gcsPath = buildGCSPath(img.lineMessageId, '.jpg', 'image');
+            await uploadToGCS(img.buffer, gcsPath, '.jpg');
+            gcsPaths.push(gcsPath);
         }
 
         await Message.update(
-            { metadata: { imageCount: localPaths.length, localPaths } },
+            { metadata: { imageCount: gcsPaths.length, gcsPaths } },
             { where: { id: pending.messageId } }
         );
 
@@ -198,16 +185,15 @@ async function handleNonImageMessage(event, userId, groupId, sourceType, message
         case 'video': {
             try {
                 const buffer = await downloadAsBuffer(message.id);
-                const fileName = `${message.id}.mp4`;
-                const filePath = path.join(MEDIA_DIR, 'videos', fileName);
-                fs.writeFileSync(filePath, buffer);
+                const gcsPath = buildGCSPath(message.id, '.mp4', 'video');
+                await uploadToGCS(buffer, gcsPath, '.mp4');
                 dbPayload.metadata = {
-                    localPath: `/media/videos/${fileName}`,
+                    gcsPath,
                     duration: message.duration,
                     fileSize: buffer.length
                 };
             } catch (e) {
-                console.error('❌ Video download fail:', e.message);
+                console.error('❌ Video upload fail:', e.message);
                 dbPayload.metadata = { duration: message.duration };
             }
             break;
@@ -216,16 +202,15 @@ async function handleNonImageMessage(event, userId, groupId, sourceType, message
         case 'audio': {
             try {
                 const buffer = await downloadAsBuffer(message.id);
-                const fileName = `${message.id}.m4a`;
-                const filePath = path.join(MEDIA_DIR, 'audios', fileName);
-                fs.writeFileSync(filePath, buffer);
+                const gcsPath = buildGCSPath(message.id, '.m4a', 'audio');
+                await uploadToGCS(buffer, gcsPath, '.m4a');
                 dbPayload.metadata = {
-                    localPath: `/media/audios/${fileName}`,
+                    gcsPath,
                     duration: message.duration,
                     fileSize: buffer.length
                 };
             } catch (e) {
-                console.error('❌ Audio download fail:', e.message);
+                console.error('❌ Audio upload fail:', e.message);
                 dbPayload.metadata = { duration: message.duration };
             }
             break;
@@ -234,17 +219,16 @@ async function handleNonImageMessage(event, userId, groupId, sourceType, message
         case 'file': {
             try {
                 const buffer = await downloadAsBuffer(message.id);
-                const safeFileName = message.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
-                const diskName = `${message.id}_${safeFileName}`;
-                const filePath = path.join(MEDIA_DIR, 'files', diskName);
-                fs.writeFileSync(filePath, buffer);
+                const ext = '.' + (message.fileName.split('.').pop() || 'bin');
+                const gcsPath = buildGCSPath(message.id, ext, 'file');
+                await uploadToGCS(buffer, gcsPath, ext);
                 dbPayload.metadata = {
-                    localPath: `/media/files/${diskName}`,
+                    gcsPath,
                     fileName: message.fileName,
                     fileSize: message.fileSize ?? buffer.length
                 };
             } catch (e) {
-                console.error('❌ File download fail:', e.message);
+                console.error('❌ File upload fail:', e.message);
                 dbPayload.metadata = { fileName: message.fileName, fileSize: message.fileSize };
             }
             break;

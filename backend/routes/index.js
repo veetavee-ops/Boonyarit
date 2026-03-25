@@ -5,6 +5,7 @@ router.use('/api/auth', require('./auth'));
 router.use('/api/groups', require('./groups'));
 router.use('/api/messages', require('./messages'));
 router.use('/api/attachments', require('./attachments'));
+router.use('/api/media', require('./media'));   // ← เพิ่มบรรทัดนี้
 router.use('/api', require('./admin'));
 
 module.exports = router;

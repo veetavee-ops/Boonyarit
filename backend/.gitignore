@@ -79,3 +79,5 @@ media/
 messages.json
 
 test.js
+
+config/gcs-key.json

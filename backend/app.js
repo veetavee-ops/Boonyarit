@@ -15,6 +15,8 @@ const adminRoute = require('./routes/admin');
 const groupsRoute = require('./routes/groups');
 const messagesRoute = require('./routes/messages');
 const datesRoute = require('./routes/dates');
+const mediaRoute = require('./routes/media');   // ← เพิ่ม
+
 
 const app = express();
 
@@ -60,6 +62,8 @@ app.use('/api', adminRoute);
 app.use('/api/groups', groupsRoute);
 app.use('/api/messages', messagesRoute);
 app.use('/api/dates', datesRoute);
+app.use('/api/media', mediaRoute);
+
 
 // ===== Serve Frontend (SPA) =====
 const wwwPath = path.join(__dirname, 'www');

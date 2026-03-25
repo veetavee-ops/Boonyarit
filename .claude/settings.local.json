@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node -e \"require\\(''@google-cloud/storage''\\); console.log\\(''OK''\\)\")",
+      "Bash(node -e \":*)"
+    ]
+  }
+}
