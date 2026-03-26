@@ -34,6 +34,7 @@ export function useMessages(groupId) {
     if (!groupId) return
 
     let cancelled = false
+    setMessages([])   // clear ข้อความเก่าทันที ก่อน fetch ใหม่
     setLoading(true)
     setHasMore(true) // reset on group change
 

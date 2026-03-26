@@ -28,12 +28,13 @@ export default function ChatWindow({
     const isNewGroup = prevGroupRef.current !== currentGroup?.groupId
     const scrollType = isNewGroup ? 'auto' : 'smooth'
 
-    // Skip auto-scroll to bottom if we are just loading MORE older messages
-    if (prevScrollHeight.current > 0) return
-
     if (isNewGroup) {
+      prevScrollHeight.current = 0  // reset เพื่อให้ scroll-to-bottom ทำงานเสมอเมื่อเปลี่ยนกลุ่ม
       prevGroupRef.current = currentGroup?.groupId
     }
+
+    // Skip auto-scroll to bottom if we are just loading MORE older messages
+    if (prevScrollHeight.current > 0) return
 
     const scrollToBottom = (behavior) => {
       messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' })
