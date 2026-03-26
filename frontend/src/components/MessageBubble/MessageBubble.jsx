@@ -666,6 +666,7 @@ export default function MessageBubble({ msg, prevMsg, allMessages }) {
                 (() => {
                   const paths =
                     msg.metadata?.gcsPaths || msg.metadata?.localPaths || [];
+                  const storedUrls = msg.metadata?.gcsUrls || [];
                   if (paths.length === 0) return null;
                   return (
                     <div
@@ -673,7 +674,7 @@ export default function MessageBubble({ msg, prevMsg, allMessages }) {
                       data-count={Math.min(paths.length, 3)}
                     >
                       {paths.map((p, i) => {
-                        const url = mediaUrl(p);
+                        const url = storedUrls[i] || mediaUrl(p);
                         return (
                           <img
                             key={i}
@@ -696,9 +697,8 @@ export default function MessageBubble({ msg, prevMsg, allMessages }) {
               {/* ── VIDEO ── */}
               {msg.messageType === "video" &&
                 (() => {
-                  const url = mediaUrl(
-                    msg.metadata?.gcsPath || msg.metadata?.localPath,
-                  );
+                  const url = msg.metadata?.gcsUrl ||
+                    mediaUrl(msg.metadata?.gcsPath || msg.metadata?.localPath);
                   const name = msg.metadata?.fileName || "video.mp4";
                   if (url) {
                     return (
@@ -736,9 +736,8 @@ export default function MessageBubble({ msg, prevMsg, allMessages }) {
               {/* ── AUDIO ── */}
               {msg.messageType === "audio" &&
                 (() => {
-                  const url = mediaUrl(
-                    msg.metadata?.gcsPath || msg.metadata?.localPath,
-                  );
+                  const url = msg.metadata?.gcsUrl ||
+                    mediaUrl(msg.metadata?.gcsPath || msg.metadata?.localPath);
                   return (
                     <VoiceMessage url={url} duration={msg.metadata?.duration} />
                   );
@@ -748,9 +747,8 @@ export default function MessageBubble({ msg, prevMsg, allMessages }) {
               {/* ── FILE ── */}
               {msg.messageType === "file" &&
                 (() => {
-                  const url = mediaUrl(
-                    msg.metadata?.gcsPath || msg.metadata?.localPath,
-                  );
+                  const url = msg.metadata?.gcsUrl ||
+                    mediaUrl(msg.metadata?.gcsPath || msg.metadata?.localPath);
                   const fileName = msg.metadata?.fileName || "ไฟล์แนบ";
                   const accentColor = getFileAccent(fileName);
                   if (url) {

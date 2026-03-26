@@ -91,17 +91,32 @@ export function getAttachmentUrl(attachmentId) {
  * Generate AI summary for all messages on a specific date (or 'all' for full range)
  * range: { rangeValue, rangeUnit } — used when date === 'all'
  */
-export async function summarizeDay(date, range = null) {
+export async function summarizeDay(date, range = null, groupId = null) {
   try {
     const body = { date }
     if (range) {
       body.rangeValue = range.rangeValue
       body.rangeUnit = range.rangeUnit
     }
+    if (groupId && groupId !== 'all') {
+      body.groupId = groupId
+    }
     const res = await axiosInstance.post('/api/messages/summarize-day', body)
     return res.data
   } catch (error) {
     console.error('Error summarizing day:', error)
     throw new Error(error.response?.data?.error || 'Failed to generate summary')
+  }
+}
+
+export async function fetchActiveGroups(date, rangeValue, rangeUnit) {
+  try {
+    const res = await axiosInstance.get('/api/groups/active', {
+      params: { date, rangeValue, rangeUnit }
+    })
+    return res.data
+  } catch (error) {
+    console.error('Error fetching active groups:', error)
+    return []
   }
 }

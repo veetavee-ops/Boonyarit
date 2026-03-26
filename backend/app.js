@@ -30,7 +30,7 @@ app.set('trust proxy', 1);
 
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 300,
+  max: 1500,  // เพิ่มจาก 300 → 1000
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later.' },
@@ -56,13 +56,13 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // ===== API Routes (with rate limiting) =====
+app.use('/api/media', mediaRoute); // no rate limit — just redirects to GCS signed URL
 app.use('/api', apiLimiter);
 app.use('/api/auth', authRoute);
 app.use('/api', adminRoute);
 app.use('/api/groups', groupsRoute);
 app.use('/api/messages', messagesRoute);
 app.use('/api/dates', datesRoute);
-app.use('/api/media', mediaRoute);
 
 
 // ===== Serve Frontend (SPA) =====

@@ -264,18 +264,18 @@ body {
     gap: 6px;
   }
 
-  .user-info span {
+  .user-chip {
     display: none;
   }
 
-  .user-chip {
-    padding: 4px 8px;
+  .btn-logout {
+    padding: 6px 8px;
+    font-size: 11px;
+    gap: 0;
   }
 
-  .btn-logout {
-    padding: 4px 8px;
-    font-size: 11px;
-    gap: 4px;
+  .btn-logout span {
+    display: none;
   }
 
   .app-body {

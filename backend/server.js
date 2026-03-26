@@ -1,3 +1,12 @@
+// Polyfill fetch globals for googleapis (requires Node 18+ undici)
+if (!globalThis.Headers) {
+  const { Headers, fetch, Request, Response } = require('undici');
+  globalThis.Headers = Headers;
+  globalThis.fetch = fetch;
+  globalThis.Request = Request;
+  globalThis.Response = Response;
+}
+
 const http = require('http');
 const { Server } = require('socket.io');
 

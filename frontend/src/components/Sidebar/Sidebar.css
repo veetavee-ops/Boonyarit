@@ -1,6 +1,8 @@
 /* ─── Sidebar Shell ──────────────────────────────────────────────────────── */
 .sidebar {
   width: 280px;
+  min-width: 200px;
+  max-width: 1000px;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border-color);
   display: flex;
@@ -8,11 +10,38 @@
   height: 100%;
   z-index: 5;
   flex-shrink: 0;
+  position: relative;
+}
+
+/* ─── Resize Handle ──────────────────────────────────────────────────────── */
+.sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: ew-resize;
+  z-index: 10;
+}
+
+.sidebar-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 2px;
+  width: 2px;
+  height: 100%;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.sidebar-resize-handle:hover::after {
+  background: var(--primary-color);
 }
 
 /* ─── Header (Dark theme) ────────────────────────────────────────────────── */
 .sidebar-header {
-  padding: 18px;
+  padding: 14px;
   background: linear-gradient(160deg, #1e2742 0%, #253352 100%);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
@@ -20,7 +49,7 @@
 }
 
 .sidebar-header--collapsed {
-  padding-bottom: 14px;
+  padding-bottom: 12px;
 }
 
 .sidebar-header--collapsed .sidebar-brand {
@@ -172,6 +201,13 @@
 .btn-summarize-day:active {
   transform: translateY(0);
   box-shadow: 0 2px 8px rgba(6, 199, 85, 0.3);
+}
+
+.btn-summarize-model {
+  font-size: 11px;
+  color: var(--text-secondary, #d9d9d9);
+  text-align: center;
+  margin: 0px 0 0;
 }
 
 /* ─── Range filter row ───────────────────────────────────────────────────── */
@@ -484,8 +520,12 @@
     height: 100%;
     z-index: 101;
     transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    width: 280px;
+    width: 280px !important;
     box-shadow: 4px 0 24px rgba(0, 0, 0, 0.2);
+  }
+
+  .sidebar-resize-handle {
+    display: none;
   }
 
   .sidebar.active {

@@ -4,7 +4,7 @@ const line = require('@line/bot-sdk');
 
 const { Message, User, Group } = require('../models/index');
 const { getProfile, client } = require('../services/lineService');
-const { uploadToGCS, buildGCSPath } = require('../services/gcsService');
+const { uploadToGCS, buildGCSPath, getSignedUrlLong } = require('../services/gcsService');
 
 const { ensureGroupFolder, uploadFileToDrive } = require('../services/driveService');
 
@@ -51,9 +51,12 @@ async function handleEvent(event, io) {
     if (event.type !== 'message') return;
 
     const { source, message } = event;
+    const sourceType = source.type;
+
+    if (sourceType === 'user') return; // ไม่บันทึก private chat
+
     const userId = source.userId;
     const groupId = source.groupId || null;
-    const sourceType = source.type;
 
     // --- GROUP upsert ---
     let groupName = null;
@@ -74,10 +77,6 @@ async function handleEvent(event, io) {
         ensureGroupFolder(groupName).catch(e => console.error('Drive folder error:', e.message));
     }
 
-
-    if (message.quotedMessageId) {
-        console.log(`💬 Reply detected! quotedMessageId: ${message.quotedMessageId}, messageId: ${message.id}, type: ${message.type}`);
-    }
 
     if (message.type === 'image') {
         return await handleImageMessage(event, userId, groupId, sourceType, message, io);
@@ -138,14 +137,17 @@ async function saveImageGroup(groupKey, io) {
     if (!pending) return;
     try {
         const gcsPaths = [];
+        const gcsUrls = [];
         for (const img of pending.images) {
             const gcsPath = buildGCSPath(img.lineMessageId, '.jpg', 'image');
             await uploadToGCS(img.buffer, gcsPath, '.jpg');
             gcsPaths.push(gcsPath);
+            const { url } = await getSignedUrlLong(gcsPath);
+            gcsUrls.push(url);
         }
 
         await Message.update(
-            { metadata: { imageCount: gcsPaths.length, gcsPaths } },
+            { metadata: { imageCount: gcsPaths.length, gcsPaths, gcsUrls, gcsUrlExpires: '2099-12-31T23:59:59Z' } },
             { where: { id: pending.messageId } }
         );
 
@@ -197,8 +199,9 @@ async function handleNonImageMessage(event, userId, groupId, sourceType, message
                 const buffer = await downloadAsBuffer(message.id);
                 const gcsPath = buildGCSPath(message.id, '.mp4', 'video');
                 await uploadToGCS(buffer, gcsPath, '.mp4');
+                const { url: gcsUrl } = await getSignedUrlLong(gcsPath);
                 dbPayload.metadata = {
-                    gcsPath,
+                    gcsPath, gcsUrl, gcsUrlExpires: '2099-12-31T23:59:59Z',
                     duration: message.duration,
                     fileSize: buffer.length
                 };
@@ -214,8 +217,9 @@ async function handleNonImageMessage(event, userId, groupId, sourceType, message
                 const buffer = await downloadAsBuffer(message.id);
                 const gcsPath = buildGCSPath(message.id, '.m4a', 'audio');
                 await uploadToGCS(buffer, gcsPath, '.m4a');
+                const { url: gcsUrl } = await getSignedUrlLong(gcsPath);
                 dbPayload.metadata = {
-                    gcsPath,
+                    gcsPath, gcsUrl, gcsUrlExpires: '2099-12-31T23:59:59Z',
                     duration: message.duration,
                     fileSize: buffer.length
                 };
@@ -232,6 +236,7 @@ async function handleNonImageMessage(event, userId, groupId, sourceType, message
                 const ext = '.' + (message.fileName.split('.').pop() || 'bin');
                 const gcsPath = buildGCSPath(message.id, ext, 'file');
                 await uploadToGCS(buffer, gcsPath, ext);
+                const { url: gcsUrl } = await getSignedUrlLong(gcsPath);
 
                 let driveFileId = null;
                 if (groupName) {
@@ -242,7 +247,7 @@ async function handleNonImageMessage(event, userId, groupId, sourceType, message
                 }
 
                 dbPayload.metadata = {
-                    gcsPath,
+                    gcsPath, gcsUrl, gcsUrlExpires: '2099-12-31T23:59:59Z',
                     fileName: message.fileName,
                     fileSize: message.fileSize ?? buffer.length,
                     ...(driveFileId && { driveFileId })

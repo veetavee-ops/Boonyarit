@@ -57,11 +57,7 @@ router.post('/login', async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('\n❌❌❌ LOGIN ERROR ❌❌❌');
-    console.error('Error name:', error.name);
-    console.error('Error message:', error.message);
-    console.error('Error stack:', error.stack);
-    console.error('❌❌❌❌❌❌❌❌❌❌❌❌❌\n');
+    console.error('[Auth] Login error:', error.message);
 
     // ✅ ส่ง error details กลับไป (DEV only)
     res.status(500).json({

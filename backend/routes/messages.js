@@ -61,7 +61,7 @@ router.get('/', async (req, res) => {
 // POST /api/messages/summarize-day
 router.post('/summarize-day', async (req, res) => {
   try {
-    const { date, rangeValue, rangeUnit } = req.body;
+    const { date, rangeValue, rangeUnit, groupId } = req.body;
 
     if (!date) {
       return res.status(400).json({ error: 'date is required' });
@@ -85,6 +85,10 @@ router.post('/summarize-day', async (req, res) => {
       const start = new Date(date + 'T00:00:00.000Z');
       const end = new Date(date + 'T23:59:59.999Z');
       whereClause = { timestamp: { [Op.between]: [start, end] } };
+    }
+
+    if (groupId && groupId !== 'all') {
+      whereClause.groupId = groupId;
     }
 
     const allMessages = await Message.findAll({

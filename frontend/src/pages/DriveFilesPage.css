@@ -51,6 +51,26 @@
   color: var(--text-secondary);
 }
 
+.drive-root-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: #1a73e8;
+  color: white;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: background 0.2s;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.drive-root-btn:hover {
+  background: #1558c0;
+}
+
 .drive-table-wrap {
   flex: 1;
   background: white;

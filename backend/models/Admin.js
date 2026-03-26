@@ -29,11 +29,7 @@ Admin.beforeCreate(async (admin) => {
     const isHashed = admin.password.startsWith('$2a$') || admin.password.startsWith('$2b$');
     
     if (!isHashed) {
-      console.log('🔒 Hashing password for new user:', admin.username);
       admin.password = await bcrypt.hash(admin.password, 10);
-      console.log('✅ Password hashed:', admin.password.substring(0, 30) + '...');
-    } else {
-      console.log('⚠️ Password already hashed, skipping');
     }
   }
 });
@@ -43,11 +39,7 @@ Admin.beforeUpdate(async (admin) => {
     const isHashed = admin.password.startsWith('$2a$') || admin.password.startsWith('$2b$');
     
     if (!isHashed) {
-      console.log('🔒 Hashing password for update:', admin.username);
       admin.password = await bcrypt.hash(admin.password, 10);
-      console.log('✅ Password hashed:', admin.password.substring(0, 30) + '...');
-    } else {
-      console.log('⚠️ Password already hashed, skipping');
     }
   }
 });
@@ -55,17 +47,9 @@ Admin.beforeUpdate(async (admin) => {
 // ✅ Instance method สำหรับตรวจสอบ password
 Admin.prototype.validatePassword = async function(password) {
   try {
-    console.log('🔐 Validating password for:', this.username);
-    console.log('   Input password:', password);
-    console.log('   Stored hash:', this.password.substring(0, 30) + '...');
-    console.log('   Hash valid format:', this.password.startsWith('$2a$') || this.password.startsWith('$2b$'));
-    
-    const isMatch = await bcrypt.compare(password, this.password);
-    
-    console.log('   Compare result:', isMatch ? '✅ MATCH' : '❌ NO MATCH');
-    return isMatch;
+    return await bcrypt.compare(password, this.password);
   } catch (error) {
-    console.error('❌ Password validation error:', error);
+    console.error('[Auth] Password validation error:', error.message);
     return false;
   }
 };

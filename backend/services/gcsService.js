@@ -65,7 +65,6 @@ async function uploadToGCS(buffer, gcsPath, extension) {
         resumable: false, // ไฟล์เล็กกว่า 5MB ใช้ false เร็วกว่า
     });
 
-    console.log(`✅ อัพโหลดขึ้น GCS สำเร็จ: ${gcsPath}`);
     return gcsPath;
 }
 
@@ -88,6 +87,22 @@ async function getSignedUrl(gcsPath, expiresInMinutes = 60) {
 }
 
 /**
+ * สร้าง Signed URL อายุยาว (ถึงปี 2099) สำหรับเก็บใน DB
+ * @param {string} gcsPath
+ * @returns {{ url: string, expires: string }} url และ ISO date ของ expiry
+ */
+async function getSignedUrlLong(gcsPath) {
+    const file = bucket.file(gcsPath);
+    const expires = new Date('2099-12-31T23:59:59Z');
+    const [url] = await file.getSignedUrl({
+        version: 'v2',
+        action: 'read',
+        expires,
+    });
+    return { url, expires: expires.toISOString() };
+}
+
+/**
  * ลบไฟล์ออกจาก GCS
  * @param {string} gcsPath - path ใน bucket
  */
@@ -99,6 +114,7 @@ async function deleteFromGCS(gcsPath) {
 module.exports = {
     uploadToGCS,
     getSignedUrl,
+    getSignedUrlLong,
     deleteFromGCS,
     buildGCSPath,
 };

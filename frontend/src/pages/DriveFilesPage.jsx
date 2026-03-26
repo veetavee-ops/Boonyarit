@@ -25,10 +25,14 @@ export default function DriveFilesPage() {
   const [selectedGroup, setSelectedGroup] = useState('')
   const [selectedDate, setSelectedDate] = useState('')
   const [loading, setLoading] = useState(true)
+  const [driveRootUrl, setDriveRootUrl] = useState(null)
 
   useEffect(() => {
     axios.get(`${API_BASE}/api/groups`, { withCredentials: true })
       .then(r => setGroups(Array.isArray(r.data) ? r.data.filter(g => !g.isPrivate) : []))
+      .catch(() => {})
+    axios.get(`${API_BASE}/api/groups/drive-root`, { withCredentials: true })
+      .then(r => setDriveRootUrl(r.data.url))
       .catch(() => {})
   }, [])
 
@@ -106,6 +110,15 @@ export default function DriveFilesPage() {
           </select>
 
           <span className="drive-count">{filteredFiles.length} ไฟล์</span>
+
+          {driveRootUrl && (
+            <a href={driveRootUrl} target="_blank" rel="noreferrer" className="drive-root-btn">
+              <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
+                <path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
+              </svg>
+              เปิด Google Drive
+            </a>
+          )}
         </div>
 
         <div className="drive-table-wrap">

@@ -122,7 +122,7 @@ export default function App() {
     return <LoginPage onLogin={handleLogin} />;
   }
 
-  const handleSummarizeDay = async () => {
+  const handleSummarizeDay = async (summarizeGroupId = null) => {
     setShowDaySummary(true);
     setSummaryLoading(true);
     setSummaryError(null);
@@ -132,6 +132,7 @@ export default function App() {
       const result = await summarizeDay(
         selectedDate,
         selectedDate === "all" ? dateRange : null,
+        summarizeGroupId,
       );
       setDaySummary(result);
     } catch (error) {
@@ -147,8 +148,10 @@ export default function App() {
     (g, i, arr) => arr.findIndex((x) => x.groupId === g.groupId) === i,
   );
   const currentGroup = uniqueGroups.find((g) => g.groupId === selectedGroup);
-  const privateChats = uniqueGroups.filter((g) => g.isPrivate);
-  const realGroups = uniqueGroups.filter((g) => !g.isPrivate);
+  // const privateChats = uniqueGroups.filter((g) => g.isPrivate);
+  const realGroups = uniqueGroups
+    .filter((g) => !g.isPrivate)
+    .sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime));
 
   if (groupsLoading && groupsList.length === 0) {
     return (
@@ -188,17 +191,11 @@ export default function App() {
             </svg>
             <span>{admin.username}</span>
           </div>
-          {/* <button onClick={() => window.location.href = '/drive-files'} className="btn-drive">
-            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-              <path d="M6 2c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z" />
-            </svg>
-            ไฟล์ Drive
-          </button> */}
           <button onClick={handleLogout} className="btn-logout">
             <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
               <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z" />
             </svg>
-            ออกจากระบบ
+            <span>ออกจากระบบ</span>
           </button>
         </div>
       </div>
@@ -210,7 +207,6 @@ export default function App() {
           refreshKey={refreshKey} // ✅ Pass refreshKey for real-time updates
           selectedDate={selectedDate}
           selectedGroup={selectedGroup}
-          privateChats={privateChats}
           realGroups={realGroups}
           onSelectDate={setSelectedDate}
           onSelectGroup={(groupId) => {

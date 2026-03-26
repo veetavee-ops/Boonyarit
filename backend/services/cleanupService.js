@@ -1,9 +1,10 @@
 /**
  * cleanupService.js
- * Nightly cron: delete media files older than 90 days to prevent disk full.
+ * Nightly cron: delete messages with expired GCS URLs + old local media files.
  */
 const fs = require('fs');
 const path = require('path');
+const { Op } = require('sequelize');
 
 const MEDIA_DIRS = [
     path.join(__dirname, '..', 'media', 'images'),
@@ -35,7 +36,41 @@ function cleanupOldFiles() {
         }
     }
 
-    if (deleted > 0) console.log(`[Cleanup] Deleted ${deleted} files older than 90 days`);
+    if (deleted > 0) console.log(`[Cleanup] Deleted ${deleted} local files older than 90 days`);
+}
+
+/**
+ * ลบ messages ที่ gcsUrlExpires หมดอายุแล้ว
+ * (ด้วย expiry 2099 จะไม่ trigger จนกว่าจะเปลี่ยน service account)
+ */
+async function cleanupExpiredMessages() {
+    try {
+        const { Message } = require('../models/index');
+        const { deleteFromGCS } = require('./gcsService');
+
+        const expired = await Message.findAll({
+            where: {
+                [Op.and]: [
+                    { 'metadata.gcsUrlExpires': { [Op.ne]: null } },
+                    { 'metadata.gcsUrlExpires': { [Op.lt]: new Date().toISOString() } },
+                ]
+            }
+        });
+
+        if (expired.length === 0) return;
+
+        for (const msg of expired) {
+            const paths = msg.metadata?.gcsPaths || (msg.metadata?.gcsPath ? [msg.metadata.gcsPath] : []);
+            for (const p of paths) {
+                await deleteFromGCS(p).catch(() => {});
+            }
+            await msg.destroy();
+        }
+
+        console.log(`[Cleanup] Deleted ${expired.length} messages with expired GCS URLs`);
+    } catch (e) {
+        console.error('[Cleanup] Error cleaning expired messages:', e.message);
+    }
 }
 
 /**
@@ -43,10 +78,9 @@ function cleanupOldFiles() {
  * Call this function once from server.js on startup.
  */
 function startCleanupCron() {
-    // Run once at startup to clear any very old files
     cleanupOldFiles();
+    cleanupExpiredMessages();
 
-    // Schedule to run every 24h, aligned to next 2AM
     const now = new Date();
     const next2AM = new Date(now);
     next2AM.setHours(2, 0, 0, 0);
@@ -56,8 +90,11 @@ function startCleanupCron() {
 
     setTimeout(() => {
         cleanupOldFiles();
-        // After first aligned run, repeat every 24h
-        setInterval(cleanupOldFiles, 24 * 60 * 60 * 1000);
+        cleanupExpiredMessages();
+        setInterval(() => {
+            cleanupOldFiles();
+            cleanupExpiredMessages();
+        }, 24 * 60 * 60 * 1000);
     }, msUntilNext2AM);
 
     console.log(`[Cleanup] Cron scheduled. Next run at ${next2AM.toLocaleString('th-TH')}`);

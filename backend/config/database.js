@@ -47,7 +47,6 @@ sequelize.authenticate()
   })
   .catch(err => {
     console.error('❌ Unable to connect to database:', err.message);
-    console.error('Please check your database configuration in .env file');
   });
 
 module.exports = sequelize;
