@@ -23,29 +23,26 @@ export default function ChatWindow({
 
   // ✅ Auto-scroll to bottom (only on initial load or new message)
   useEffect(() => {
-    if (!messagesEndRef.current || loading) return
+    if (loading || !containerRef.current) return
 
     const isNewGroup = prevGroupRef.current !== currentGroup?.groupId
-    const scrollType = isNewGroup ? 'auto' : 'smooth'
 
     if (isNewGroup) {
-      prevScrollHeight.current = 0  // reset เพื่อให้ scroll-to-bottom ทำงานเสมอเมื่อเปลี่ยนกลุ่ม
+      prevScrollHeight.current = 0
       prevGroupRef.current = currentGroup?.groupId
     }
 
     // Skip auto-scroll to bottom if we are just loading MORE older messages
     if (prevScrollHeight.current > 0) return
 
-    const scrollToBottom = (behavior) => {
-      messagesEndRef.current?.scrollIntoView({ behavior, block: 'end' })
-    }
-
-    scrollToBottom(scrollType)
+    // ใช้ scrollTop = scrollHeight ตรงๆ เพื่อให้ scroll ถึง bottom เสมอ
+    const el = containerRef.current
+    el.scrollTop = el.scrollHeight
 
     // เลื่อนลงไปอีกครั้งเพื่อรองรับรูปภาพที่เพิ่งโหลดเสร็จ (ซึ่งจะดันข้อความขึ้น)
-    const t1 = setTimeout(() => scrollToBottom(scrollType), 150)
-    const t2 = setTimeout(() => scrollToBottom('auto'), 500)
-    const t3 = setTimeout(() => scrollToBottom('auto'), 1000)
+    const t1 = setTimeout(() => { el.scrollTop = el.scrollHeight }, 150)
+    const t2 = setTimeout(() => { el.scrollTop = el.scrollHeight }, 500)
+    const t3 = setTimeout(() => { el.scrollTop = el.scrollHeight }, 1000)
 
     return () => {
       clearTimeout(t1)

@@ -45,6 +45,7 @@ body {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: var(--bg-app);
 }
@@ -156,7 +157,7 @@ body {
   flex: 1;
   display: flex;
   overflow: hidden;
-  height: calc(100vh - var(--header-height));
+  height: calc(100dvh - var(--header-height));
 }
 
 /* ── Loading Screen ───────────────────────────────────────────── */

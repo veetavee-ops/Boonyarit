@@ -165,12 +165,43 @@
 @media screen and (max-width: 768px) {
   .drive-body {
     padding: 12px;
+    gap: 10px;
   }
 
+  .drive-toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .drive-group-select {
+    flex: 1;
+    min-width: 0;
+    font-size: 12px;
+  }
+
+  .drive-root-btn {
+    margin-left: 0;
+    font-size: 12px;
+    padding: 6px 10px;
+  }
+
+  /* เหลือแค่ ชื่อไฟล์ + ลิงก์ บน mobile */
+  .drive-table th:nth-child(2),
+  .drive-table td:nth-child(2),
   .drive-table th:nth-child(3),
   .drive-table td:nth-child(3),
   .drive-table th:nth-child(4),
-  .drive-table td:nth-child(4) {
+  .drive-table td:nth-child(4),
+  .drive-table th:nth-child(5),
+  .drive-table td:nth-child(5) {
     display: none;
+  }
+
+  .drive-table td {
+    padding: 10px 12px;
+  }
+
+  .drive-table th {
+    padding: 10px 12px;
   }
 }
