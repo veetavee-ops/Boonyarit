@@ -15,5 +15,5 @@ COPY backend/package*.json ./
 RUN npm ci --omit=dev
 COPY backend/ .
 COPY --from=frontend-build /app/dist ./www
-EXPOSE 3001
+EXPOSE 3000
 CMD ["node", "server.js"]

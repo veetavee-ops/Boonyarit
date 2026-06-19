@@ -4,7 +4,9 @@ dist/
 *.log
 backend/media/
 backend/www/
-backend/gcs-key.json
+backend/config/gcs-key.json
 test/
 .DS_Store
 Thumbs.db
+PROJECT_HANDOFF.md
+PROJECT_HANDOFF.html

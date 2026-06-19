@@ -1,9 +1,9 @@
 // services/gcsService.js
 const { Storage } = require('@google-cloud/storage');
 
-const storage = new Storage({
-    keyFilename: process.env.GCS_KEY_FILE,
-});
+const storage = process.env.GCS_KEY_JSON
+    ? new Storage({ credentials: JSON.parse(process.env.GCS_KEY_JSON) })
+    : new Storage({ keyFilename: process.env.GCS_KEY_FILE });
 
 const bucket = storage.bucket(process.env.GCS_BUCKET_NAME);
 

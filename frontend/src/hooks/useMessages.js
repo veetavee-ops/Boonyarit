@@ -7,6 +7,11 @@ export function useGroups(refreshKey = 0) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    if (!localStorage.getItem('token')) {
+      setLoading(false)
+      return
+    }
+
     let cancelled = false
 
     fetchGroups()
