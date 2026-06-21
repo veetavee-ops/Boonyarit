@@ -124,9 +124,8 @@ async function handleUserDMSearch(event, userId) {
             const date = new Date(msg.timestamp).toLocaleDateString('th-TH', {
                 day: 'numeric', month: 'short', year: 'numeric'
             });
-            const link = meta.driveFileId
-                ? `https://drive.google.com/file/d/${meta.driveFileId}/view`
-                : (meta.gcsUrl || '(ไม่มีลิงก์)');
+            const link = meta.gcsUrl
+                || (meta.driveFileId ? `https://drive.google.com/file/d/${meta.driveFileId}/view` : '(ไม่มีลิงก์)');
 
             reply += `${i + 1}. ${fileName}\n   📂 ${groupName}  👤 ${sender}\n   📅 ${date}\n   🔗 ${link}\n\n`;
         });
