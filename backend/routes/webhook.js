@@ -8,9 +8,7 @@ const { getProfile, client } = require('../services/lineService');
 const { uploadToGCS, buildGCSPath, getSignedUrlLong } = require('../services/gcsService');
 
 const { ensureGroupFolder, uploadFileToDrive } = require('../services/driveService');
-// alertError ปิดไว้ชั่วคราว — GCS เสียอยู่ทำให้ spam DM ทุก request
-// const { alertError } = require('../services/notifyService');
-const alertError = () => {};
+const { alertError } = require('../services/notifyService');
 
 
 const lineConfig = {
