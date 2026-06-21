@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { formatTime, getColor, formatFileSize } from "../../utils/helpers";
 import Avatar from "../Avatar/Avatar";
 import VoiceMessage from "./VoiceMessage";
@@ -484,6 +484,30 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
 
   const openLightbox = useCallback((url) => setLightboxImg(url), []);
   const closeLightbox = useCallback(() => setLightboxImg(null), []);
+
+  const lightboxRef = useRef(null);
+
+  const handleLightboxWheel = useCallback((e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const imgEl = e.currentTarget.querySelector(".lightbox-img");
+    if (!imgEl) return;
+    const currentScale = parseFloat(imgEl.dataset.zoom || "1");
+    const delta = e.deltaY > 0 ? -0.15 : 0.15;
+    const newScale = Math.min(Math.max(currentScale + delta, 0.5), 5);
+    imgEl.dataset.zoom = newScale;
+    imgEl.style.transform = `scale(${newScale}) translate(${imgEl.dataset.panX || 0}px, ${imgEl.dataset.panY || 0}px)`;
+    const display = imgEl.parentElement.querySelector(".lightbox-zoom-level");
+    if (display) display.textContent = `${Math.round(newScale * 100)}%`;
+  }, []);
+
+  useEffect(() => {
+    const el = lightboxRef.current;
+    if (!el) return;
+    el.addEventListener("wheel", handleLightboxWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleLightboxWheel);
+  }, [lightboxImg, handleLightboxWheel]);
+
   const openMedia = useCallback(
     (url, fileName) => setMediaModal({ url, fileName }),
     [],
@@ -903,23 +927,6 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
       {/* ✅ Image Lightbox with Zoom */}
       {lightboxImg &&
         (() => {
-          const handleWheel = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            const imgEl = e.currentTarget.querySelector(".lightbox-img");
-            if (!imgEl) return;
-            const currentScale = parseFloat(imgEl.dataset.zoom || "1");
-            const delta = e.deltaY > 0 ? -0.15 : 0.15;
-            const newScale = Math.min(Math.max(currentScale + delta, 0.5), 5);
-            imgEl.dataset.zoom = newScale;
-            imgEl.style.transform = `scale(${newScale}) translate(${imgEl.dataset.panX || 0}px, ${imgEl.dataset.panY || 0}px)`;
-            // update zoom display
-            const display = imgEl.parentElement.querySelector(
-              ".lightbox-zoom-level",
-            );
-            if (display) display.textContent = `${Math.round(newScale * 100)}%`;
-          };
-
           const handleZoomBtn = (dir) => {
             const imgEl = document.querySelector(".lightbox-img");
             if (!imgEl) return;
@@ -974,8 +981,8 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
           return (
             <div
               className="lightbox-overlay"
+              ref={lightboxRef}
               onClick={closeLightbox}
-              onWheel={handleWheel}
             >
               {/* Close button */}
               <button
