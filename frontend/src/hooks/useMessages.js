@@ -94,5 +94,9 @@ export function useMessages(groupId) {
     })
   }, [])
 
-  return { messages, loading, hasMore, loadingMore, loadMore, addMessage }
+  const updateMessage = useCallback((messageId, patch) => {
+    setMessages(prev => prev.map(m => m.messageId === messageId ? { ...m, ...patch } : m))
+  }, [])
+
+  return { messages, loading, hasMore, loadingMore, loadMore, addMessage, updateMessage }
 }

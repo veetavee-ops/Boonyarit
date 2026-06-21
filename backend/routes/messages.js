@@ -163,6 +163,77 @@ router.get('/drive-files', async (req, res) => {
   }
 });
 
+// GET /api/messages/important?groupId=...
+router.get('/important', async (req, res) => {
+  try {
+    const { groupId } = req.query;
+    const where = { isImportant: true };
+
+    if (groupId) {
+      if (groupId.startsWith('private_name_')) {
+        const displayName = groupId.replace('private_name_', '');
+        const users = await User.findAll({ where: { displayName } });
+        const userIds = users.map((u) => u.userId);
+        where.userId = { [Op.in]: userIds.length > 0 ? userIds : ['__none__'] };
+        where.groupId = { [Op.or]: [null, ''] };
+      } else if (groupId.startsWith('private_')) {
+        const userId = groupId.replace('private_', '');
+        where.userId = userId;
+        where.groupId = { [Op.or]: [null, ''] };
+      } else {
+        where.groupId = groupId;
+      }
+    }
+
+    if (req.admin.role === 'user') {
+      const allowed = await getAllowedGroupIds(req.admin.id);
+      if (!groupId) {
+        where.groupId = { [Op.in]: allowed.length ? allowed : ['__none__'] };
+      } else if (!groupId.startsWith('private') && !allowed.includes(groupId)) {
+        return res.json([]);
+      }
+    }
+
+    const messages = await Message.findAll({
+      where,
+      include: [
+        { model: User, as: 'user', attributes: ['displayName', 'pictureUrl'] },
+        { model: Group, as: 'group', attributes: ['groupName', 'pictureUrl'] },
+      ],
+      order: [['timestamp', 'DESC']],
+      limit: 200,
+    });
+
+    messages.reverse();
+    res.json(messages);
+  } catch (error) {
+    console.error('[ERROR] GET /api/messages/important:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/messages/:messageId/important — toggle important flag
+router.patch('/:messageId/important', async (req, res) => {
+  try {
+    const msg = await Message.findOne({ where: { messageId: req.params.messageId } });
+    if (!msg) return res.status(404).json({ error: 'ไม่พบข้อความ' });
+
+    if (req.admin.role === 'user') {
+      const allowed = await getAllowedGroupIds(req.admin.id);
+      if (msg.groupId && !allowed.includes(msg.groupId)) {
+        return res.status(403).json({ error: 'ไม่มีสิทธิ์' });
+      }
+    }
+
+    msg.isImportant = !msg.isImportant;
+    await msg.save();
+    res.json({ messageId: msg.messageId, isImportant: msg.isImportant });
+  } catch (error) {
+    console.error('[ERROR] PATCH /api/messages/:messageId/important:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/messages/search?q=...&limit=30
 // ค้นใน: text, ชื่อคนส่ง, ชื่อกลุ่ม, ชื่อไฟล์
 router.get('/search', async (req, res) => {

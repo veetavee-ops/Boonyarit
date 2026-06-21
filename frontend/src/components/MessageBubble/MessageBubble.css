@@ -102,6 +102,41 @@
   line-height: 1;
 }
 
+/* ─── Star / Important ────────────────────────────────────────────────────── */
+.msg-star-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 3px;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  line-height: 1;
+}
+
+.msg:hover .msg-star-btn {
+  opacity: 1;
+}
+
+.msg-star-btn--active {
+  color: #f5c518;
+  opacity: 1 !important;
+}
+
+.msg-star-btn:hover {
+  color: #f5c518;
+}
+
+.msg--important {
+  background: rgba(245, 197, 24, 0.06);
+  border-radius: 8px;
+  padding: 2px 4px;
+  margin-left: -4px;
+}
+
 /* ─── Text Bubble ─────────────────────────────────────────────────────────── */
 .msg-text {
   background: var(--bg-elevated);

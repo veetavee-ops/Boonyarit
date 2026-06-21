@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getInitials, getColor } from '../../utils/helpers'
 import MessageBubble from '../MessageBubble/MessageBubble'
 import MediaGallery from '../MediaGallery/MediaGallery'
+import { fetchImportantMessages } from '../../api/messages'
 import './ChatWindow.css'
 
 function relativeTime(dateStr) {
@@ -46,11 +47,15 @@ export default function ChatWindow({
   searchResults,
   searching,
   onSelectGroup,
+  onToggleImportant,
 }) {
   const messagesEndRef = useRef(null)
   const containerRef = useRef(null)
   const prevScrollHeight = useRef(0)
   const [showGallery, setShowGallery] = useState(false)
+  const [showImportant, setShowImportant] = useState(false)
+  const [importantMessages, setImportantMessages] = useState([])
+  const [importantLoading, setImportantLoading] = useState(false)
 
   const prevGroupRef = useRef(currentGroup?.groupId)
 
@@ -103,7 +108,35 @@ export default function ChatWindow({
 
   useEffect(() => {
     setShowGallery(false)
+    setShowImportant(false)
   }, [currentGroup])
+
+  useEffect(() => {
+    if (!showImportant) return
+    setImportantLoading(true)
+    fetchImportantMessages(currentGroup?.groupId)
+      .then(setImportantMessages)
+      .finally(() => setImportantLoading(false))
+  }, [showImportant, currentGroup?.groupId])
+
+  const handleToggleImportantFilter = () => {
+    setShowGallery(false)
+    setShowImportant(v => !v)
+  }
+
+  const handleToggleImportant = async (messageId) => {
+    if (onToggleImportant) {
+      const result = await onToggleImportant(messageId)
+      if (result && showImportant) {
+        if (result.isImportant) {
+          // reload important list
+          fetchImportantMessages(currentGroup?.groupId).then(setImportantMessages)
+        } else {
+          setImportantMessages(prev => prev.filter(m => m.messageId !== messageId))
+        }
+      }
+    }
+  }
 
   const isSearching = search.trim().length >= 2
   const filtered = isSearching ? [] : messages
@@ -152,16 +185,28 @@ export default function ChatWindow({
 
         <div className="header-right">
           {currentGroup && (
-            <button
-              className={`btn-media-gallery${showGallery ? ' active' : ''}`}
-              onClick={() => setShowGallery(v => !v)}
-              title="ดูสื่อ ไฟล์ และลิ้งค์"
-            >
-              <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
-                <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" />
-              </svg>
-              <span className="btn-media-label">สื่อ</span>
-            </button>
+            <>
+              <button
+                className={`btn-media-gallery${showImportant ? ' active' : ''}`}
+                onClick={handleToggleImportantFilter}
+                title="ข้อความสำคัญ"
+              >
+                <svg viewBox="0 0 24 24" width="15" height="15" fill={showImportant ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+                <span className="btn-media-label">สำคัญ</span>
+              </button>
+              <button
+                className={`btn-media-gallery${showGallery ? ' active' : ''}`}
+                onClick={() => { setShowImportant(false); setShowGallery(v => !v); }}
+                title="ดูสื่อ ไฟล์ และลิ้งค์"
+              >
+                <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
+                  <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" />
+                </svg>
+                <span className="btn-media-label">สื่อ</span>
+              </button>
+            </>
           )}
 
           <div className="search-wrapper">
@@ -180,7 +225,32 @@ export default function ChatWindow({
 
       {/* ── Main content area ──────────────────────────────── */}
       <div className="chat-body">
-        {isSearching ? (
+        {showImportant ? (
+          <div className="messages" ref={containerRef}>
+            {importantLoading ? (
+              <div className="empty"><div className="spinner" /><p>กำลังโหลด...</p></div>
+            ) : importantMessages.length === 0 ? (
+              <div className="empty">
+                <div className="empty-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" width="52" height="52" opacity="0.3">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                  </svg>
+                </div>
+                <p>ยังไม่มีข้อความสำคัญในกลุ่มนี้</p>
+              </div>
+            ) : (
+              importantMessages.map((msg, i) => (
+                <MessageBubble
+                  key={msg.id || i}
+                  msg={msg}
+                  prevMsg={importantMessages[i - 1]}
+                  allMessages={importantMessages}
+                  onToggleImportant={handleToggleImportant}
+                />
+              ))
+            )}
+          </div>
+        ) : isSearching ? (
           <div className="search-results-panel">
             {searching ? (
               <div className="empty"><div className="spinner" /><p>กำลังค้นหา...</p></div>
@@ -266,10 +336,11 @@ export default function ChatWindow({
                     <span className="date-separator-label">{msgDate}</span>
                   </div>
                 )}
-                <MessageBubble 
-                  msg={msg} 
+                <MessageBubble
+                  msg={msg}
                   prevMsg={filtered[i - 1]}
                   allMessages={messages}
+                  onToggleImportant={handleToggleImportant}
                 />
               </div>
             )

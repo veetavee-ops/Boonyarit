@@ -129,6 +129,27 @@ export async function fetchDashboardStats() {
   }
 }
 
+export async function toggleImportant(messageId) {
+  try {
+    const res = await axiosInstance.patch(`/api/messages/${messageId}/important`)
+    return res.data
+  } catch (error) {
+    console.error('Error toggling important:', error)
+    throw new Error(error.response?.data?.error || 'Failed to toggle important')
+  }
+}
+
+export async function fetchImportantMessages(groupId) {
+  try {
+    const params = groupId ? { groupId } : {}
+    const res = await axiosInstance.get('/api/messages/important', { params })
+    return res.data
+  } catch (error) {
+    console.error('Error fetching important messages:', error)
+    return []
+  }
+}
+
 export async function fetchActiveGroups(date, rangeValue, rangeUnit) {
   try {
     const res = await axiosInstance.get('/api/groups/active', {

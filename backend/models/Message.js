@@ -30,8 +30,13 @@ const Message = sequelize.define('Message', {
         allowNull: true
     },
     metadata: {
-        type: DataTypes.JSONB, 
+        type: DataTypes.JSONB,
         allowNull: true
+    },
+    isImportant: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        allowNull: false
     }
 }, {
     tableName: 'messages',

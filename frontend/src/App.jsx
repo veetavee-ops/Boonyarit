@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { checkAuth, logout } from "./api/auth";
 import { useGroups, useMessages } from "./hooks/useMessages";
 import { useSocket } from "./hooks/useSocket";
-import { summarizeDay, searchMessages } from "./api/messages";
+import { summarizeDay, searchMessages, toggleImportant } from "./api/messages";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import DriveFilesPage from "./pages/DriveFilesPage";
@@ -49,6 +49,7 @@ export default function App() {
     loadingMore,
     loadMore,
     addMessage,
+    updateMessage,
   } = useMessages(selectedGroup);
 
   const handleNewMessage = useCallback(
@@ -171,6 +172,16 @@ export default function App() {
     }
   };
 
+  const handleToggleImportant = async (messageId) => {
+    try {
+      const result = await toggleImportant(messageId);
+      updateMessage(messageId, { isImportant: result.isImportant });
+      return result;
+    } catch (err) {
+      console.error('Failed to toggle important:', err);
+    }
+  };
+
   const groupsList = Array.isArray(groups) ? groups : [];
   // Dedup by groupId only — backend already groups by displayName
   const uniqueGroups = groupsList.filter(
@@ -278,6 +289,7 @@ export default function App() {
             searchResults={searchResults}
             searching={searching}
             onSelectGroup={(groupId) => { setSelectedGroup(groupId); setSearch(''); }}
+            onToggleImportant={handleToggleImportant}
           />
         )}
         <Sidebar

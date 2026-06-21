@@ -468,7 +468,7 @@ function MediaModal({ media, onClose }) {
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export default function MessageBubble({ msg, prevMsg, allMessages }) {
+export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImportant }) {
   const [lightboxImg, setLightboxImg] = useState(null);
   const [mediaModal, setMediaModal] = useState(null);
   const [linkUrl, setLinkUrl] = useState(null);
@@ -528,7 +528,7 @@ export default function MessageBubble({ msg, prevMsg, allMessages }) {
   return (
     <>
       <div
-        className={`msg ${isNewSender ? "new" : ""} ${isTimeBreak ? "time-gap" : ""}`}
+        className={`msg ${isNewSender ? "new" : ""} ${isTimeBreak ? "time-gap" : ""} ${msg.isImportant ? "msg--important" : ""}`}
         data-id={msg.id}
       >
         {/* Avatar */}
@@ -882,6 +882,18 @@ export default function MessageBubble({ msg, prevMsg, allMessages }) {
             {/* end msg-bubble-content */}
 
             <span className="msg-time-bubble">{formatTime(msg.timestamp)}</span>
+            {onToggleImportant && (
+              <button
+                className={`msg-star-btn${msg.isImportant ? " msg-star-btn--active" : ""}`}
+                onClick={(e) => { e.stopPropagation(); onToggleImportant(msg.messageId); }}
+                title={msg.isImportant ? "ยกเลิกสำคัญ" : "ทำเครื่องหมายสำคัญ"}
+                aria-label={msg.isImportant ? "ยกเลิกสำคัญ" : "ทำเครื่องหมายสำคัญ"}
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill={msg.isImportant ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+              </button>
+            )}
           </div>
           {/* end msg-bubble-row */}
         </div>
