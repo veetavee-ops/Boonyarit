@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const line = require('@line/bot-sdk');
+const { Op } = require('sequelize');
 
 const { Message, User, Group } = require('../models/index');
 const { getProfile, client } = require('../services/lineService');
@@ -48,6 +49,81 @@ router.post('/', webhookMiddleware, async (req, res) => {
 });
 
 
+// ─── Admin DM: ค้นหาไฟล์ด้วยคำสั่ง "ค้นหา <keyword>" ──────────────────────────
+async function handleAdminDM(event) {
+    const text = (event.message?.text || '').trim();
+    const replyToken = event.replyToken;
+    console.log('[AdminDM] received:', JSON.stringify(text));
+
+    const SEARCH_PREFIX = /^ค้นหา\s+(.+)/u;
+    const match = text.match(SEARCH_PREFIX);
+
+    if (!match) {
+        // ไม่ใช่คำสั่ง → ส่ง help
+        console.log('[AdminDM] no command match → sending help');
+        await client.replyMessage(replyToken, {
+            type: 'text',
+            text: '🤖 วิธีใช้งาน\n\nพิมพ์: ค้นหา <ชื่อไฟล์>\n\nตัวอย่าง:\n• ค้นหา สัญญา\n• ค้นหา .pdf\n• ค้นหา ใบเสนอราคา\n\nจะแสดงผลสูงสุด 5 รายการล่าสุด'
+        }).catch(e => console.error('[AdminDM] replyMessage error:', e.message));
+        return true; // handled
+    }
+
+    const keyword = match[1].trim();
+    const safeKeyword = keyword.replace(/'/g, "''");
+    console.log('[AdminDM] searching keyword:', keyword);
+
+    try {
+        const { literal } = require('sequelize');
+        const results = await Message.findAll({
+            where: {
+                messageType: 'file',
+                [Op.and]: [literal(`(metadata->>'fileName') ILIKE '%${safeKeyword}%'`)]
+            },
+            include: [
+                { model: User, as: 'user', attributes: ['displayName'] },
+                { model: Group, as: 'group', attributes: ['groupName'] }
+            ],
+            order: [['timestamp', 'DESC']],
+            limit: 5
+        });
+
+        if (results.length === 0) {
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: `🔍 ไม่พบไฟล์ที่ชื่อมี "${keyword}"\n\nลองคำค้นอื่นดูครับ`
+            }).catch(() => {});
+            return true;
+        }
+
+        let reply = `🔍 ค้นหา: "${keyword}" — พบ ${results.length} รายการ\n\n`;
+        results.forEach((msg, i) => {
+            const meta = msg.metadata || {};
+            const fileName = meta.fileName || '(ไม่ทราบชื่อ)';
+            const groupName = msg.group?.groupName || 'แชทส่วนตัว';
+            const sender = msg.user?.displayName || '?';
+            const date = new Date(msg.timestamp).toLocaleDateString('th-TH', {
+                day: 'numeric', month: 'short', year: 'numeric'
+            });
+            const link = meta.driveFileId
+                ? `https://drive.google.com/file/d/${meta.driveFileId}/view`
+                : (meta.gcsUrl || '(ไม่มีลิงก์)');
+
+            reply += `${i + 1}. ${fileName}\n   📂 ${groupName}  👤 ${sender}\n   📅 ${date}\n   🔗 ${link}\n\n`;
+        });
+
+        console.log('[AdminDM] replying with', results.length, 'results');
+        await client.replyMessage(replyToken, { type: 'text', text: reply.trim() }).catch(e => console.error('[AdminDM] replyMessage error:', e.message));
+    } catch (err) {
+        console.error('[DM Search Error]', err.message);
+        await client.replyMessage(replyToken, {
+            type: 'text',
+            text: '❌ เกิดข้อผิดพลาดในการค้นหา กรุณาลองใหม่'
+        }).catch(e => console.error('[AdminDM] replyMessage error:', e.message));
+    }
+
+    return true;
+}
+
 async function handleEvent(event, io) {
     if (event.type !== 'message') return;
 
@@ -56,6 +132,12 @@ async function handleEvent(event, io) {
 
     const userId = source.userId;
     const groupId = source.groupId || null;
+
+    // ── Admin DM command handler (ไม่บันทึกลง DB) ────────────────────────────
+    if (sourceType === 'user' && message.type === 'text' && userId === process.env.ADMIN_LINE_USER_ID) {
+        await handleAdminDM(event);
+        return;
+    }
 
     // --- GROUP upsert ---
     let groupName = null;
