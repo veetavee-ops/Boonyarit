@@ -58,6 +58,15 @@ export default function App() {
         ? newMessage.groupId
         : `private_${newMessage.userId}`;
 
+      console.log('[DEBUG socket]', {
+        msgGroupId,
+        selectedGroup,
+        match: msgGroupId === selectedGroup,
+        userId: newMessage.userId,
+        groupId: newMessage.groupId,
+        type: newMessage.messageType,
+      });
+
       // 1. If looking at this group, add message to chat window
       if (msgGroupId === selectedGroup) {
         addMessage(newMessage);
