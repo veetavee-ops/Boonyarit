@@ -9,6 +9,8 @@
 | เลือกวันที่ | GET `/api/dates` | `routes/dates.js` → `models/Message.js` | `components/Sidebar/Sidebar.jsx` |
 | ดูข้อความในกลุ่ม | GET `/api/messages` | `routes/messages.js` → `models/Message.js` | `components/ChatWindow/ChatWindow.jsx` |
 | Scroll โหลดข้อความเก่า | GET `/api/messages?before=TIMESTAMP` | `routes/messages.js` | `hooks/useMessages.js` |
+| Mark / Unmark ข้อความสำคัญ | PATCH `/api/messages/:messageId/important` | `routes/messages.js` | `MessageBubble.jsx` (ดาว ⭐) → `api/messages.js#toggleImportant` |
+| ดูเฉพาะข้อความสำคัญ | GET `/api/messages/important?groupId=...` | `routes/messages.js` | `ChatWindow.jsx` (ปุ่ม ⭐ สำคัญ) → `api/messages.js#fetchImportantMessages` |
 | กดปุ่ม Summarize (AI) | POST `/api/messages/summarize-day` | `routes/messages.js` → `services/aiService.js` | `components/Sidebar/Sidebar.jsx` → `components/SummaryModal/SummaryModal.jsx` |
 | ดูรูป/วิดีโอ | GET `/api/media?path=...` | `routes/media.js` → `services/gcsService.js` | `components/MessageBubble/MessageBubble.jsx` |
 | ดูไฟล์ที่อัพโหลด | GET `/api/messages/drive-files` | `routes/messages.js` → `models/Message.js` | `pages/DriveFilesPage.jsx` |
