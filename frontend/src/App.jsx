@@ -54,10 +54,9 @@ export default function App() {
 
   const handleNewMessage = useCallback(
     (newMessage) => {
-      // Group: use groupId directly. Private: match the "private_name_" format from groups API
       const msgGroupId = newMessage.groupId
         ? newMessage.groupId
-        : `private_name_${newMessage.user?.displayName}`;
+        : `private_${newMessage.userId}`;
 
       // 1. If looking at this group, add message to chat window
       if (msgGroupId === selectedGroup) {
