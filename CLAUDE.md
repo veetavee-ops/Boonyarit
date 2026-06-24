@@ -1,8 +1,7 @@
 # LINE OA V2 — Claude Instructions
 
 **อ่านไฟล์เหล่านี้ก่อนทำงานทุกครั้ง:**
-1. `PROJECT_HANDOFF.md` — credentials, setup, สิ่งที่ทำแล้ว, roadmap (ถ้ายังไม่มี `.md` ให้อ่าน `PROJECT_HANDOFF.html` แทน)
-2. `PROJECT_FLOW.md` — map ปุ่ม/คำสั่ง → ไฟล์ที่เกี่ยวข้อง
+1. `PROJECT_OVERVIEW.md` — โครงสร้างระบบ, models, routes, services, roadmap ครบทุกชั้น
 
 ## Quick Reference
 - Working dir: `D:\_888_230626_Dev Project\Boonyarit\` (drive letter เปลี่ยนได้)
