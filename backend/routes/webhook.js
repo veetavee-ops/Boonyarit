@@ -199,21 +199,25 @@ async function handleEvent(event, io) {
 
 
     if (message.type === 'image') {
-        return await handleImageMessage(event, userId, groupId, sourceType, message, io);
+        return await handleImageMessage(event, userId, groupId, sourceType, message, io, folderName);
     } else {
         return await handleNonImageMessage(event, userId, groupId, sourceType, message, io, folderName);
     }
 }
 
-// ─── Image Message — grouped then uploaded to GCS ─────────────────────────────
-async function handleImageMessage(event, userId, groupId, sourceType, message, io) {
+// ─── Image Message — grouped then uploaded to GCS + Drive ─────────────────────
+async function handleImageMessage(event, userId, groupId, sourceType, message, io, folderName) {
     const groupKey = `${userId}-${groupId || 'private'}`;
 
+    let senderName = 'unknown';
     try {
-        const user = await User.findByPk(userId);
+        let user = await User.findByPk(userId);
         if (!user) {
             const profile = await getProfile(event.source);
             await User.upsert({ userId, displayName: profile.displayName, pictureUrl: profile.pictureUrl });
+            senderName = profile.displayName || 'unknown';
+        } else {
+            senderName = user.displayName || 'unknown';
         }
     } catch (e) {
         console.error('❌ User Error (in handleImageMessage):', e.message);
@@ -247,6 +251,8 @@ async function handleImageMessage(event, userId, groupId, sourceType, message, i
         pendingImageGroups.set(groupKey, {
             messageId: newMessage.id,
             images: [imageData],
+            folderName,
+            senderName,
             timer: setTimeout(() => saveImageGroup(groupKey, io), IMAGE_GROUP_TIMEOUT)
         });
     }
@@ -258,16 +264,40 @@ async function saveImageGroup(groupKey, io) {
     try {
         const gcsPaths = [];
         const gcsUrls = [];
+        const driveFileIds = [];
+
+        // Drive folder (ถ้าเปิดใช้งาน)
+        let folderId = null;
+        if (pending.folderName && await isDriveEnabled()) {
+            folderId = await ensureGroupFolder(pending.folderName).catch(() => null);
+        }
+
         for (const img of pending.images) {
             const gcsPath = buildGCSPath(img.lineMessageId, '.jpg', 'image');
             await uploadToGCS(img.buffer, gcsPath, '.jpg');
             gcsPaths.push(gcsPath);
             const { url } = await getSignedUrlLong(gcsPath);
             gcsUrls.push(url);
+
+            if (folderId) {
+                try {
+                    const driveFileName = buildDriveFileName(pending.senderName, img.timestamp.getTime(), `${img.lineMessageId}.jpg`);
+                    const driveFileId = await uploadFileToDrive(img.buffer, driveFileName, 'image/jpeg', folderId).catch(() => null);
+                    if (driveFileId) driveFileIds.push(driveFileId);
+                } catch (e) {
+                    console.error('❌ Image Drive fail:', e.message);
+                }
+            }
         }
 
         await Message.update(
-            { metadata: { imageCount: gcsPaths.length, gcsPaths, gcsUrls, gcsUrlExpires: '2099-12-31T23:59:59Z' } },
+            {
+                metadata: {
+                    imageCount: gcsPaths.length,
+                    gcsPaths, gcsUrls, gcsUrlExpires: '2099-12-31T23:59:59Z',
+                    ...(driveFileIds.length > 0 && { driveFileIds })
+                }
+            },
             { where: { id: pending.messageId } }
         );
 
