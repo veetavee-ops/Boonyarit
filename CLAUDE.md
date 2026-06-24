@@ -31,7 +31,7 @@
 
 ## Session Status
 
-### อัพเดท: 24 มิถุนายน 2569 (session 1)
+### อัพเดท: 24 มิถุนายน 2569 (session 3)
 
 ### ✅ Session 1 — Repo rename + Image Drive upload fix (24 มิ.ย. 69)
 
@@ -89,15 +89,76 @@ Internet → Caddy (port 80/443) → localhost:3000 → Docker container (lineoa
 - Root cause: OAuth app อยู่ใน **Testing mode** → refresh token หมดอายุทุก **7 วัน**
 - ถ้าเจอ `invalid_grant` ใน log → token หมดอายุ ต้องต่ออายุ
 - แก้ชั่วคราว: `cd backend && node scripts/refresh-drive-token.js` (รันบนเครื่อง, เปิด browser login Google)
-- **แก้ถาวร (ยังไม่ได้ทำ)**: Google Cloud Console → APIs & Services → OAuth consent screen → เปลี่ยน Publishing status: **Testing → Production**
+- **แก้ถาวรแล้ว (Session 3)**: OAuth → Production + script ใช้ localhost:9999 แทน OOB
 
 **สำคัญ:** รูป/ไฟล์ที่เห็นใน UI มาจาก **database** ไม่ใช่ GCS/Drive — GCS/Drive คือ backup เท่านั้น ถ้า upload พัง UI ยังทำงานได้ปกติ
 
+### ✅ Session 3 — gdrive-sa.json + Drive token fix (24 มิ.ย. 69)
+
+**gdrive-sa.json — ใช้ได้ทุกเครื่องโดยไม่เก็บบนเครื่อง:**
+- ดึง `gcs-key.json` จาก production server ผ่าน SCP → upload ขึ้น Drive `_claude-config/gdrive-sa.json` (file ID: `1IHOmqcAhEQawVjey-k7BaGmFMYypSxqz`)
+- แก้ `~/.claude/scripts/gdrive-update.py` ให้รับ `--sa-key` argument + เปลี่ยน scope เป็น `drive` (จาก `drive.file`)
+- แก้ `~/.claude/commands/mem.md` ให้ download sa.json จาก Drive → ใช้ → ลบทิ้ง (ไม่เก็บบนเครื่องถาวร)
+- Share "MY DEV CREDENTIALS" folder กับ `boonyarit-bot-storage@tax-ocr-498513.iam.gserviceaccount.com` (Editor)
+
+**Drive OAuth token fix — แก้ถาวรแล้ว:**
+- เปลี่ยน OAuth consent screen: **Testing → Production** (token ไม่หมดทุก 7 วันอีกต่อไป)
+- แก้ `backend/scripts/refresh-drive-token.js` ให้ใช้ local HTTP server port 9999 แทน OOB (deprecated)
+- ได้ refresh token ใหม่ → อัปเดตบน server + restart + อัปเดต Drive backup
+
+### ✅ Session 4 — GCS confirmed + Drive token fix again (24 มิ.ย. 69)
+
+**GCS — ยืนยันว่าทำงานได้แล้ว:**
+- ทดสอบ `file.save()` และ `getSignedUrl()` ตรงๆ จาก container → ผ่านทั้งคู่
+- `bucket.exists()` fails เป็น expected behavior (SA ไม่มี `storage.buckets.get`) แต่ upload/signed URL ทำงานได้
+- Service account: `boonyarit-bot-storage@tax-ocr-498513.iam.gserviceaccount.com` มี permission เพียงพอสำหรับ object operations
+
+**Drive token หมดซ้ำ — สาเหตุ:**
+- token ที่สร้างในช่วงที่ app ยัง Testing mode ถูก Google invalidate เมื่อเปลี่ยนเป็น Production
+- ต้องสร้าง refresh token ใหม่อีกครั้ง หลังจากเปลี่ยนเป็น Production แล้ว
+
+**แก้แล้ว (Session 4):**
+- รัน `node scripts/refresh-drive-token.js` → ได้ token ใหม่
+- อัปเดตบน server ด้วย Python stdin (sed มีปัญหากับ `//` ใน token)
+- อัปเดต Drive backup (file ใหม่สุดใน Boonyarit/ folder เสมอ)
+- Restart container → ไม่มี error ใหม่
+
+**คำสั่ง sed ที่ถูกต้องสำหรับ token ที่มี `//`:**
+```bash
+# ใช้ | เป็น delimiter แทน / เพื่อหลีกเลี่ยงปัญหา
+sed -i 's|^GOOGLE_DRIVE_REFRESH_TOKEN=.*|GOOGLE_DRIVE_REFRESH_TOKEN=NEW_TOKEN|' /home/worker/lineoa-dev/.env
+# หรือใช้ Python stdin ซึ่งปลอดภัยกว่าเสมอ
+```
+
+### ✅ Session 4 ต่อ — Root cause ชัดเจน + แก้ถาวร
+
+**สาเหตุที่แท้จริงของ invalid_grant:**
+- `driveService.js` ใช้ `'urn:ietf:wg:oauth:2.0:oob'` เป็น redirect_uri (deprecated โดย Google ตั้งแต่ 2022)
+- **แก้แล้ว:** เปลี่ยนเป็น `'http://localhost:9999'` ให้ตรงกับ `refresh-drive-token.js`
+
+**บทเรียนสำคัญ — `docker compose restart` vs `up --force-recreate`:**
+- `docker compose restart` → restart container แต่ ENV VARS ไม่เปลี่ยน (ใช้ของเก่า)
+- `docker compose up -d --force-recreate` → recreate container ใหม่ โหลด `.env` ใหม่ทั้งหมด
+- **ถ้าต้องการให้ `.env` มีผล ต้องใช้ `--force-recreate` เสมอ**
+
+**Drive folder cache in-memory:**
+- `driveService.js` มี `const folderCache = new Map()` — cache folder IDs ใน RAM
+- เมื่อ server start และ token valid → folder ID ถูก cache → ใช้งานได้แม้ token expire ทีหลัง
+- เมื่อ restart container → cache หาย → ทุก call ต้องใช้ token จริง
+
+**สถานะปัจจุบัน (24 มิ.ย. 69 ~19:30 ICT):**
+- ✅ Drive token valid — อัปเดตด้วย `--force-recreate`
+- ✅ GCS — ทำงานได้ (key mounted, permissions ถูกต้อง)
+- ✅ driveService.js — แก้ redirect_uri แล้ว (รอ deploy)
+- ✅ ไม่มี `invalid_grant` ใน log แล้ว
+
 ### 🟡 ถัดไป
 
-1. **แก้ Drive token ถาวร** — OAuth consent screen → Production mode (สำคัญ ไม่งั้นจะหมดทุก 7 วัน)
-2. **Refresh token ทันที** — `cd backend && node scripts/refresh-drive-token.js` แล้วอัปเดต `GOOGLE_DRIVE_REFRESH_TOKEN` ใน server `.env` และ Google Drive backup
-3. **Drive Backup ครบแล้ว**: Boonyarit ✅ / mydev_CorePlan_Erp ✅ / tax-ocr ✅
+1. **ทดสอบส่งรูปใน LINE** — เช็คว่าขึ้น Drive และ GCS จริงไหม
+2. **ถ้าต้อง refresh token ใหม่ในอนาคต:**
+   - `cd backend && node scripts/refresh-drive-token.js`
+   - แล้วอัปเดต `/home/worker/lineoa-dev/.env` บน server
+   - **ต้องใช้ `docker compose up -d --force-recreate`** ไม่ใช่ `restart`
 
 ### 🔑 Image vs File upload pattern
 

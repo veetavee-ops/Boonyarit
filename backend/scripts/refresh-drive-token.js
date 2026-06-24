@@ -1,56 +1,91 @@
 /**
  * refresh-drive-token.js
  * รัน: node scripts/refresh-drive-token.js
- * เพื่อขอ Google Drive refresh token ใหม่
+ * เปิด browser → Allow → รับ refresh token อัตโนมัติ (Node 16+)
  */
-const { google } = require('googleapis');
-const readline = require('readline');
+const http = require('http');
+const https = require('https');
+const querystring = require('querystring');
 
 const CLIENT_ID = process.env.GOOGLE_DRIVE_CLIENT_ID;
 const CLIENT_SECRET = process.env.GOOGLE_DRIVE_CLIENT_SECRET;
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
-    console.error('❌ ต้องตั้ง GOOGLE_DRIVE_CLIENT_ID และ GOOGLE_DRIVE_CLIENT_SECRET ใน .env ก่อน');
+    console.error('❌ ต้องตั้ง GOOGLE_DRIVE_CLIENT_ID และ GOOGLE_DRIVE_CLIENT_SECRET ก่อน');
     process.exit(1);
 }
 
-const oauth2Client = new google.auth.OAuth2(
-    CLIENT_ID,
-    CLIENT_SECRET,
-    'urn:ietf:wg:oauth:2.0:oob'
-);
+const PORT = 9999;
+const REDIRECT_URI = `http://localhost:${PORT}`;
 
-const authUrl = oauth2Client.generateAuthUrl({
+const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` + querystring.stringify({
+    client_id: CLIENT_ID,
+    redirect_uri: REDIRECT_URI,
+    response_type: 'code',
+    scope: 'https://www.googleapis.com/auth/drive',
     access_type: 'offline',
-    scope: ['https://www.googleapis.com/auth/drive'],
     prompt: 'consent',
 });
 
 console.log('\n=== Google Drive Re-Authorization ===\n');
-console.log('1. เปิด URL นี้ใน browser:\n');
+console.log('เปิด URL นี้ใน browser:\n');
 console.log(authUrl);
-console.log('\n2. ล็อกอิน Google account → กด Allow');
-console.log('3. Copy authorization code ที่ได้\n');
+console.log('\nรอรับ code...\n');
 
-const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-rl.question('วาง code ที่นี่: ', async (code) => {
-    try {
-        const { tokens } = await oauth2Client.getToken(code.trim());
-        if (!tokens.refresh_token) {
-            console.log('\n⚠️  ไม่ได้ refresh_token — ลองอีกครั้ง (ต้องกด "Allow" ใหม่)');
-        } else {
-            console.log('\n✅ สำเร็จ! Refresh token ใหม่:\n');
-            console.log(tokens.refresh_token);
-            console.log('\n--- อัปเดตบน server ---');
-            console.log('ssh root@168.144.137.42');
-            console.log(`sed -i 's/^GOOGLE_DRIVE_REFRESH_TOKEN=.*/GOOGLE_DRIVE_REFRESH_TOKEN=${tokens.refresh_token}/' /opt/lineoa/.env`);
-            console.log('cd /opt/lineoa && docker compose restart');
-        }
-    } catch (e) {
-        console.error('\n❌ Error:', e.message);
-        if (e.message.includes('invalid_grant')) {
-            console.log('\nลอง: เปิด URL ใหม่อีกครั้งและ copy code ให้ถูกต้อง');
-        }
+const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url, REDIRECT_URI);
+    const code = url.searchParams.get('code');
+
+    if (!code) {
+        res.end('No code');
+        return;
     }
-    rl.close();
+
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end('<h1>✅ สำเร็จ! ปิดหน้าต่างนี้ได้เลย</h1>');
+    server.close();
+
+    const postData = querystring.stringify({
+        code,
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        redirect_uri: REDIRECT_URI,
+        grant_type: 'authorization_code',
+    });
+
+    const options = {
+        hostname: 'oauth2.googleapis.com',
+        path: '/token',
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': Buffer.byteLength(postData),
+        },
+    };
+
+    const tokenReq = https.request(options, (tokenRes) => {
+        let data = '';
+        tokenRes.on('data', (chunk) => data += chunk);
+        tokenRes.on('end', () => {
+            const tokens = JSON.parse(data);
+            if (!tokens.refresh_token) {
+                console.log('⚠️  ไม่ได้ refresh_token — ลองรันใหม่อีกครั้ง');
+            } else {
+                console.log('\n✅ Refresh token ใหม่:\n');
+                console.log(tokens.refresh_token);
+                console.log('\n--- อัปเดตบน server ---');
+                console.log('ssh root@168.144.137.42');
+                console.log(`sed -i 's/^GOOGLE_DRIVE_REFRESH_TOKEN=.*/GOOGLE_DRIVE_REFRESH_TOKEN=${tokens.refresh_token}/' /home/worker/lineoa-dev/.env`);
+                console.log('docker compose -f /home/worker/lineoa-dev/docker-compose.yml restart');
+            }
+        });
+    });
+
+    tokenReq.on('error', (e) => console.error('❌ Error:', e.message));
+    tokenReq.write(postData);
+    tokenReq.end();
+});
+
+server.listen(PORT, () => {
+    console.log(`รอรับ code ที่ port ${PORT}...`);
 });
