@@ -34,6 +34,7 @@ export default function App() {
   const [groupSortBy, setGroupSortBy] = useState("time");
 
   const [showDaySummary, setShowDaySummary] = useState(false);
+  const [showDriveFiles, setShowDriveFiles] = useState(false);
   const [daySummary, setDaySummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState(null);
@@ -110,10 +111,6 @@ export default function App() {
   // 🔒 Check for hidden registration route (Simple Router) — AFTER all hooks
   if (window.location.pathname === "/register-admin") {
     return <RegisterPage />;
-  }
-
-  if (window.location.pathname === "/drive-files") {
-    return <DriveFilesPage />;
   }
 
   const handleLogin = (adminData) => {
@@ -310,6 +307,7 @@ export default function App() {
           onRangeChange={setDateRange}
           aiProvider={aiProvider}
           onAiProviderChange={setAiProvider}
+          onOpenDriveFiles={() => setShowDriveFiles(true)}
         />
       </div>
 
@@ -320,6 +318,10 @@ export default function App() {
           error={summaryError}
           onClose={() => setShowDaySummary(false)}
         />
+      )}
+
+      {showDriveFiles && (
+        <DriveFilesPage onClose={() => setShowDriveFiles(false)} />
       )}
     </div>
   );
