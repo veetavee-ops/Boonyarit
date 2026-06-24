@@ -31,7 +31,7 @@
 
 ## Session Status
 
-### อัพเดท: 24 มิถุนายน 2569 (session 3)
+### อัพเดท: 24 มิถุนายน 2569 (session 5)
 
 ### ✅ Session 1 — Repo rename + Image Drive upload fix (24 มิ.ย. 69)
 
@@ -106,59 +106,81 @@ Internet → Caddy (port 80/443) → localhost:3000 → Docker container (lineoa
 - แก้ `backend/scripts/refresh-drive-token.js` ให้ใช้ local HTTP server port 9999 แทน OOB (deprecated)
 - ได้ refresh token ใหม่ → อัปเดตบน server + restart + อัปเดต Drive backup
 
-### ✅ Session 4 — GCS confirmed + Drive token fix again (24 มิ.ย. 69)
+### ✅ Session 4 — Drive invalid_grant root cause + แก้ถาวร (24 มิ.ย. 69)
 
 **GCS — ยืนยันว่าทำงานได้แล้ว:**
 - ทดสอบ `file.save()` และ `getSignedUrl()` ตรงๆ จาก container → ผ่านทั้งคู่
-- `bucket.exists()` fails เป็น expected behavior (SA ไม่มี `storage.buckets.get`) แต่ upload/signed URL ทำงานได้
-- Service account: `boonyarit-bot-storage@tax-ocr-498513.iam.gserviceaccount.com` มี permission เพียงพอสำหรับ object operations
+- `bucket.exists()` fails เป็น expected behavior (SA ไม่มี `storage.buckets.get`) — ไม่ใช่ bug
+- Commit: `de9fbf9`
 
-**Drive token หมดซ้ำ — สาเหตุ:**
-- token ที่สร้างในช่วงที่ app ยัง Testing mode ถูก Google invalidate เมื่อเปลี่ยนเป็น Production
-- ต้องสร้าง refresh token ใหม่อีกครั้ง หลังจากเปลี่ยนเป็น Production แล้ว
+**Root cause ของ Drive invalid_grant:**
+1. `driveService.js` ใช้ `'urn:ietf:wg:oauth:2.0:oob'` เป็น redirect_uri → Google deprecated OOB ตั้งแต่ 2022 → token refresh ล้มเหลวเสมอ
+2. `docker compose restart` ไม่ reload `.env` → container ใช้ token เก่าตลอด แม้ .env ถูกอัปเดตแล้ว
 
-**แก้แล้ว (Session 4):**
-- รัน `node scripts/refresh-drive-token.js` → ได้ token ใหม่
-- อัปเดตบน server ด้วย Python stdin (sed มีปัญหากับ `//` ใน token)
-- อัปเดต Drive backup (file ใหม่สุดใน Boonyarit/ folder เสมอ)
-- Restart container → ไม่มี error ใหม่
+**แก้แล้ว:**
+- เปลี่ยน `driveService.js` redirect_uri → `'http://localhost:9999'` (commit `de9fbf9`, deployed)
+- รัน `node scripts/refresh-drive-token.js` → token ใหม่
+- อัปเดต `.env` บน server ด้วย Python stdin
+- `docker compose up -d --force-recreate` → โหลด token ใหม่จริง
+- ทดสอบแล้ว: Drive token OK + Drive upload OK
 
-**คำสั่ง sed ที่ถูกต้องสำหรับ token ที่มี `//`:**
+**อัปเดต token บน server (วิธีที่ถูกต้อง):**
 ```bash
-# ใช้ | เป็น delimiter แทน / เพื่อหลีกเลี่ยงปัญหา
-sed -i 's|^GOOGLE_DRIVE_REFRESH_TOKEN=.*|GOOGLE_DRIVE_REFRESH_TOKEN=NEW_TOKEN|' /home/worker/lineoa-dev/.env
-# หรือใช้ Python stdin ซึ่งปลอดภัยกว่าเสมอ
+# Python stdin — ปลอดภัยกว่า sed (sed มีปัญหากับ // ใน token)
+$script = @"
+import re
+with open('/home/worker/lineoa-dev/.env', 'r') as f: c = f.read()
+c = re.sub(r'^GOOGLE_DRIVE_REFRESH_TOKEN=.*', 'GOOGLE_DRIVE_REFRESH_TOKEN=NEW_TOKEN', c, flags=re.MULTILINE)
+with open('/home/worker/lineoa-dev/.env', 'w') as f: f.write(c)
+"@
+$script | ssh root@168.144.137.42 "python3"
+# แล้ว force-recreate ไม่ใช่ restart!
+ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compose.yml up -d --force-recreate"
 ```
 
-### ✅ Session 4 ต่อ — Root cause ชัดเจน + แก้ถาวร
+### ✅ Session 5 — สารบัญ DriveFilesPage ยกเครื่องใหม่ (24 มิ.ย. 69)
 
-**สาเหตุที่แท้จริงของ invalid_grant:**
-- `driveService.js` ใช้ `'urn:ietf:wg:oauth:2.0:oob'` เป็น redirect_uri (deprecated โดย Google ตั้งแต่ 2022)
-- **แก้แล้ว:** เปลี่ยนเป็น `'http://localhost:9999'` ให้ตรงกับ `refresh-drive-token.js`
+**แสดงไฟล์ครบ + DM + เวลา (commit `06112e1`):**
+- เพิ่ม `messageType: ['file', 'image']` ใน query (เดิมมีแค่ file)
+- filter เปลี่ยนเป็น `driveFileId || driveFileIds?.length > 0` รองรับทั้ง 2 ประเภท
+- handle `private_` groupId ใน drive-files endpoint (DM ขึ้นสารบัญได้)
+- เอา `isPrivate` filter ออกจาก frontend dropdown
+- เพิ่มเวลา (hour:minute) ในคอลัมน์วันที่
 
-**บทเรียนสำคัญ — `docker compose restart` vs `up --force-recreate`:**
-- `docker compose restart` → restart container แต่ ENV VARS ไม่เปลี่ยน (ใช้ของเก่า)
-- `docker compose up -d --force-recreate` → recreate container ใหม่ โหลด `.env` ใหม่ทั้งหมด
-- **ถ้าต้องการให้ `.env` มีผล ต้องใช้ `--force-recreate` เสมอ**
+**ลบไฟล์จากสารบัญ (commit `60360be`):**
+- `driveService.js`: เพิ่ม `deleteFileFromDrive(fileId)` — Drive delete ทำใน JS ได้เลย (ไม่ต้อง Python)
+- `DELETE /api/messages/drive-files`: ลบ Drive + GCS + ล้าง metadata ใน DB
+- Frontend: แท็บ ทั้งหมด/รูปภาพ/เอกสาร/อื่นๆ พร้อม count
+- Checkbox เลือกรายการ / click แถว toggle / select all
+- ปุ่มลบ + confirm modal (ESC/backdrop ปิดได้, default focus = ยกเลิก)
 
-**Drive folder cache in-memory:**
-- `driveService.js` มี `const folderCache = new Map()` — cache folder IDs ใน RAM
-- เมื่อ server start และ token valid → folder ID ถูก cache → ใช้งานได้แม้ token expire ทีหลัง
-- เมื่อ restart container → cache หาย → ทุก call ต้องใช้ token จริง
+**สารบัญเป็น popup modal (commit `8f2a350`):**
+- `DriveFilesPage` รับ `onClose` prop — render เป็น overlay modal แทน full page
+- เอา `/drive-files` route ออกจาก App.jsx ใช้ `showDriveFiles` state แทน
+- Sidebar กดปุ่มสารบัญ → `onOpenDriveFiles()` ไม่ navigate ออกไป
+- ปิดด้วย X / ESC / click backdrop
+- "เปิด Google Drive" + "เปิด ↗" ทุกไฟล์ → `window.open()` popup แทน new tab
 
-**สถานะปัจจุบัน (24 มิ.ย. 69 ~19:30 ICT):**
-- ✅ Drive token valid — อัปเดตด้วย `--force-recreate`
-- ✅ GCS — ทำงานได้ (key mounted, permissions ถูกต้อง)
-- ✅ driveService.js — แก้ redirect_uri แล้ว (รอ deploy)
-- ✅ ไม่มี `invalid_grant` ใน log แล้ว
+**หมายเหตุสำคัญ:**
+- รูปเก่าในDriveที่ส่งก่อน token fix → DB ไม่มี `driveFileIds` → ไม่ขึ้นสารบัญ (ต้อง backfill script ถ้าต้องการ)
+- Drive delete ใน JS ทำได้แล้วเพราะ token fix session 4 — ไม่ต้องพึ่ง Python script
 
 ### 🟡 ถัดไป
 
-1. **ทดสอบส่งรูปใน LINE** — เช็คว่าขึ้น Drive และ GCS จริงไหม
-2. **ถ้าต้อง refresh token ใหม่ในอนาคต:**
-   - `cd backend && node scripts/refresh-drive-token.js`
-   - แล้วอัปเดต `/home/worker/lineoa-dev/.env` บน server
-   - **ต้องใช้ `docker compose up -d --force-recreate`** ไม่ใช่ `restart`
+1. **ทดสอบลบไฟล์** — ลองเลือกลบในสารบัญ เช็คว่าหายจาก Drive + GCS จริง
+2. **Backfill script** (optional) — รูปเก่าใน Drive ที่ DB ไม่มี driveFileIds → scan Drive มา match กับ DB
+3. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`
+
+### 🔑 docker compose restart ไม่โหลด .env ใหม่
+
+> `docker compose restart` → container restart แต่ ENV VARS ยังเป็นของเดิม (ค่าตอน create)
+> **ถ้าแก้ .env ต้องใช้:** `docker compose up -d --force-recreate`
+
+### 🔑 Drive folder cache — อย่า restart บ่อย
+
+> `driveService.js` cache folder IDs ใน RAM (`const folderCache = new Map()`)
+> ถ้า token ยัง valid ตอน startup → cache folder → Drive upload ผ่านแม้ token expire ทีหลัง
+> restart ล้าง cache → ทุก call ต้องใช้ token จริง → ถ้า token เสียจะพังทันที
 
 ### 🔑 Image vs File upload pattern
 
