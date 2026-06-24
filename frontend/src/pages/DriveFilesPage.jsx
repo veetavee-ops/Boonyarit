@@ -19,6 +19,35 @@ function formatDateLabel(dateStr) {
   return new Date(dateStr).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
+function getFileCategory(f) {
+  if (f.messageType === 'image') return 'image'
+  const ext = (f.fileName || '').split('.').pop().toLowerCase()
+  if (['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx'].includes(ext)) return 'document'
+  return 'other'
+}
+
+const TABS = [
+  { key: 'all', label: 'ทั้งหมด' },
+  { key: 'image', label: 'รูปภาพ' },
+  { key: 'document', label: 'เอกสาร' },
+  { key: 'other', label: 'อื่นๆ' },
+]
+
+function FileIcon({ f }) {
+  if (f.messageType === 'image') {
+    return (
+      <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" style={{ color: '#1a73e8', flexShrink: 0 }}>
+        <path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z" />
+      </svg>
+    )
+  }
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" style={{ color: '#06C755', flexShrink: 0 }}>
+      <path d="M6 2c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z" />
+    </svg>
+  )
+}
+
 export default function DriveFilesPage() {
   const [files, setFiles] = useState([])
   const [groups, setGroups] = useState([])
@@ -27,6 +56,10 @@ export default function DriveFilesPage() {
   const [loading, setLoading] = useState(true)
   const [driveRootUrl, setDriveRootUrl] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [activeTab, setActiveTab] = useState('all')
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     axios.get(`${API_BASE}/api/groups`, { withCredentials: true })
@@ -40,6 +73,7 @@ export default function DriveFilesPage() {
   useEffect(() => {
     setLoading(true)
     setSelectedDate('')
+    setSelectedIds(new Set())
     const params = selectedGroup ? `?groupId=${selectedGroup}` : ''
     axios.get(`${API_BASE}/api/messages/drive-files${params}`, { withCredentials: true })
       .then(r => setFiles(r.data))
@@ -47,22 +81,73 @@ export default function DriveFilesPage() {
       .finally(() => setLoading(false))
   }, [selectedGroup])
 
-  // derive unique dates from files
   const availableDates = useMemo(() => {
     const set = new Set(files.map(f => toDateStr(f.timestamp)))
     return Array.from(set).sort((a, b) => b.localeCompare(a))
   }, [files])
 
-  // reset selectedDate if it's no longer available
   useEffect(() => {
-    if (selectedDate && !availableDates.includes(selectedDate)) {
-      setSelectedDate('')
-    }
+    if (selectedDate && !availableDates.includes(selectedDate)) setSelectedDate('')
   }, [availableDates])
 
-  const filteredFiles = files
+  const baseFiles = useMemo(() => files
     .filter(f => !selectedDate || toDateStr(f.timestamp) === selectedDate)
     .filter(f => !searchQuery.trim() || (f.fileName || '').toLowerCase().includes(searchQuery.trim().toLowerCase()))
+  , [files, selectedDate, searchQuery])
+
+  const filteredFiles = useMemo(() =>
+    activeTab === 'all' ? baseFiles : baseFiles.filter(f => getFileCategory(f) === activeTab)
+  , [baseFiles, activeTab])
+
+  const tabCounts = useMemo(() => ({
+    all: baseFiles.length,
+    image: baseFiles.filter(f => getFileCategory(f) === 'image').length,
+    document: baseFiles.filter(f => getFileCategory(f) === 'document').length,
+    other: baseFiles.filter(f => getFileCategory(f) === 'other').length,
+  }), [baseFiles])
+
+  const allSelected = filteredFiles.length > 0 && filteredFiles.every(f => selectedIds.has(f.id))
+
+  const toggleSelectAll = () => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (allSelected) filteredFiles.forEach(f => next.delete(f.id))
+      else filteredFiles.forEach(f => next.add(f.id))
+      return next
+    })
+  }
+
+  const toggleSelect = (id) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  useEffect(() => {
+    if (!confirmOpen) return
+    const handler = (e) => { if (e.key === 'Escape') setConfirmOpen(false) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [confirmOpen])
+
+  const handleDelete = async () => {
+    setDeleting(true)
+    try {
+      await axios.delete(`${API_BASE}/api/messages/drive-files`, {
+        data: { ids: [...selectedIds] },
+        withCredentials: true,
+      })
+      setFiles(prev => prev.filter(f => !selectedIds.has(f.id)))
+      setSelectedIds(new Set())
+      setConfirmOpen(false)
+    } catch (e) {
+      alert('เกิดข้อผิดพลาด: ' + (e.response?.data?.error || e.message))
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   return (
     <div className="drive-page">
@@ -87,14 +172,12 @@ export default function DriveFilesPage() {
 
       <div className="drive-body">
         <div className="drive-toolbar">
-          <select
-            className="drive-group-select"
-            value={selectedGroup}
-            onChange={e => setSelectedGroup(e.target.value)}
-          >
+          <select className="drive-group-select" value={selectedGroup} onChange={e => setSelectedGroup(e.target.value)}>
             <option value="">ทุกกลุ่ม</option>
             {groups.map(g => (
-              <option key={g.groupId} value={g.groupId}>{g.groupName}</option>
+              <option key={g.groupId} value={g.groupId}>
+                {g.isPrivate ? `💬 ${g.groupName}` : g.groupName}
+              </option>
             ))}
           </select>
 
@@ -105,9 +188,7 @@ export default function DriveFilesPage() {
             disabled={availableDates.length === 0}
           >
             <option value="">ทุกวัน ({availableDates.length} วัน)</option>
-            {availableDates.map(d => (
-              <option key={d} value={d}>{formatDateLabel(d)}</option>
-            ))}
+            {availableDates.map(d => <option key={d} value={d}>{formatDateLabel(d)}</option>)}
           </select>
 
           <input
@@ -123,10 +204,34 @@ export default function DriveFilesPage() {
           {driveRootUrl && (
             <a href={driveRootUrl} target="_blank" rel="noreferrer" className="drive-root-btn">
               <svg viewBox="0 0 24 24" fill="currentColor" width="15" height="15">
-                <path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
+                <path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" />
               </svg>
               เปิด Google Drive
             </a>
+          )}
+        </div>
+
+        <div className="drive-tabs-row">
+          <div className="drive-tabs">
+            {TABS.map(tab => (
+              <button
+                key={tab.key}
+                className={`drive-tab${activeTab === tab.key ? ' active' : ''}`}
+                onClick={() => { setActiveTab(tab.key); setSelectedIds(new Set()) }}
+              >
+                {tab.label}
+                <span className="drive-tab-count">{tabCounts[tab.key]}</span>
+              </button>
+            ))}
+          </div>
+
+          {selectedIds.size > 0 && (
+            <button className="drive-delete-btn" onClick={() => setConfirmOpen(true)}>
+              <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                <path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" />
+              </svg>
+              ลบ {selectedIds.size} รายการ
+            </button>
           )}
         </div>
 
@@ -147,6 +252,9 @@ export default function DriveFilesPage() {
             <table className="drive-table">
               <thead>
                 <tr>
+                  <th className="col-check">
+                    <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
+                  </th>
                   <th>ชื่อไฟล์</th>
                   <th>กลุ่ม</th>
                   <th>ส่งโดย</th>
@@ -157,12 +265,13 @@ export default function DriveFilesPage() {
               </thead>
               <tbody>
                 {filteredFiles.map(f => (
-                  <tr key={f.id}>
+                  <tr key={f.id} className={selectedIds.has(f.id) ? 'row-selected' : ''} onClick={() => toggleSelect(f.id)}>
+                    <td className="col-check" onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={selectedIds.has(f.id)} onChange={() => toggleSelect(f.id)} />
+                    </td>
                     <td>
                       <span className="file-name-cell">
-                        <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16" style={{ color: '#06C755', flexShrink: 0 }}>
-                          <path d="M6 2c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6H6zm7 7V3.5L18.5 9H13z" />
-                        </svg>
+                        <FileIcon f={f} />
                         {f.fileName}
                       </span>
                     </td>
@@ -172,10 +281,10 @@ export default function DriveFilesPage() {
                     <td className="cell-muted">
                       {new Date(f.timestamp).toLocaleString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </td>
-                    <td className="cell-center">
-                      <a href={f.driveUrl} target="_blank" rel="noreferrer" className="drive-link">
-                        เปิด ↗
-                      </a>
+                    <td className="cell-center" onClick={e => e.stopPropagation()}>
+                      {f.driveUrl
+                        ? <a href={f.driveUrl} target="_blank" rel="noreferrer" className="drive-link">เปิด ↗</a>
+                        : <span className="cell-muted">-</span>}
                     </td>
                   </tr>
                 ))}
@@ -184,6 +293,25 @@ export default function DriveFilesPage() {
           )}
         </div>
       </div>
+
+      {confirmOpen && (
+        <div className="drive-overlay" onClick={() => setConfirmOpen(false)}>
+          <div className="drive-confirm" onClick={e => e.stopPropagation()}>
+            <div className="drive-confirm-icon">🗑️</div>
+            <h3>ยืนยันการลบ</h3>
+            <p>ลบ <strong>{selectedIds.size} รายการ</strong> ออกจาก Drive + GCS + สารบัญ?</p>
+            <p className="drive-confirm-warn">ไม่สามารถกู้คืนได้</p>
+            <div className="drive-confirm-actions">
+              <button className="btn-cancel" autoFocus onClick={() => setConfirmOpen(false)}>
+                ยกเลิก
+              </button>
+              <button className="btn-confirm-delete" onClick={handleDelete} disabled={deleting}>
+                {deleting ? 'กำลังลบ...' : 'ลบเลย'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

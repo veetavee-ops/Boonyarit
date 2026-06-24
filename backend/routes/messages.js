@@ -3,6 +3,8 @@ const router = express.Router();
 const { Message, User, Group, AdminGroup } = require('../models/index');
 
 const { summarizeAllChatsForDate } = require('../services/aiService');
+const { deleteFileFromDrive } = require('../services/driveService');
+const { deleteFromGCS } = require('../services/gcsService');
 const { Op } = require('sequelize');
 const authMiddleware = require('../middleware/auth');
 
@@ -193,6 +195,48 @@ router.get('/drive-files', async (req, res) => {
     res.json(files);
   } catch (error) {
     console.error('[ERROR] GET /api/messages/drive-files:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /api/messages/drive-files
+router.delete('/drive-files', async (req, res) => {
+  try {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0)
+      return res.status(400).json({ error: 'ids required' });
+
+    const messages = await Message.findAll({ where: { id: { [Op.in]: ids } } });
+
+    for (const m of messages) {
+      if (m.messageType === 'image') {
+        for (const fileId of m.metadata?.driveFileIds || []) {
+          await deleteFileFromDrive(fileId).catch(e => console.error('Drive del fail:', e.message));
+        }
+        for (const gcsPath of m.metadata?.gcsPaths || []) {
+          await deleteFromGCS(gcsPath).catch(e => console.error('GCS del fail:', e.message));
+        }
+        const newMeta = { ...m.metadata };
+        delete newMeta.driveFileIds;
+        delete newMeta.gcsPaths;
+        delete newMeta.gcsUrls;
+        await m.update({ metadata: newMeta });
+      } else {
+        if (m.metadata?.driveFileId)
+          await deleteFileFromDrive(m.metadata.driveFileId).catch(e => console.error('Drive del fail:', e.message));
+        if (m.metadata?.gcsPath)
+          await deleteFromGCS(m.metadata.gcsPath).catch(e => console.error('GCS del fail:', e.message));
+        const newMeta = { ...m.metadata };
+        delete newMeta.driveFileId;
+        delete newMeta.gcsPath;
+        delete newMeta.gcsUrl;
+        await m.update({ metadata: newMeta });
+      }
+    }
+
+    res.json({ deleted: messages.length });
+  } catch (error) {
+    console.error('[ERROR] DELETE /api/messages/drive-files:', error);
     res.status(500).json({ error: error.message });
   }
 });

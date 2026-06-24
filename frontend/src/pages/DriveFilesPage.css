@@ -178,6 +178,191 @@
   font-size: 14px;
 }
 
+/* ── Tabs ───────────────────────────────────────────────── */
+.drive-tabs-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.drive-tabs {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+}
+
+.drive-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  background: white;
+  font-family: 'Kanit', sans-serif;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.drive-tab:hover {
+  border-color: var(--primary-color);
+  color: var(--primary-color);
+}
+
+.drive-tab.active {
+  background: var(--primary-color);
+  border-color: var(--primary-color);
+  color: white;
+  font-weight: 600;
+}
+
+.drive-tab-count {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.08);
+}
+
+.drive-tab.active .drive-tab-count {
+  background: rgba(255,255,255,0.25);
+}
+
+/* ── Delete button ──────────────────────────────────────── */
+.drive-delete-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  background: #e53935;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  font-family: 'Kanit', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.drive-delete-btn:hover {
+  background: #c62828;
+}
+
+/* ── Checkbox column ────────────────────────────────────── */
+.col-check {
+  width: 44px;
+  text-align: center !important;
+  padding-left: 12px !important;
+}
+
+.col-check input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--primary-color);
+}
+
+.drive-table tbody tr {
+  cursor: pointer;
+}
+
+.drive-table tbody tr.row-selected {
+  background: #f0fdf4 !important;
+}
+
+/* ── Confirm modal ──────────────────────────────────────── */
+.drive-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.drive-confirm {
+  background: white;
+  border-radius: 16px;
+  padding: 32px 28px 24px;
+  width: 320px;
+  text-align: center;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+}
+
+.drive-confirm-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+}
+
+.drive-confirm h3 {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 10px;
+  color: #111;
+}
+
+.drive-confirm p {
+  font-size: 14px;
+  color: #444;
+  margin: 0 0 6px;
+}
+
+.drive-confirm-warn {
+  font-size: 12px !important;
+  color: #e53935 !important;
+  margin-bottom: 20px !important;
+}
+
+.drive-confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.btn-cancel {
+  padding: 8px 22px;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  background: white;
+  font-family: 'Kanit', sans-serif;
+  font-size: 14px;
+  cursor: pointer;
+  color: #444;
+  transition: all 0.15s;
+}
+
+.btn-cancel:hover, .btn-cancel:focus {
+  border-color: #888;
+  outline: none;
+}
+
+.btn-confirm-delete {
+  padding: 8px 22px;
+  border: none;
+  border-radius: 20px;
+  background: #e53935;
+  color: white;
+  font-family: 'Kanit', sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.btn-confirm-delete:hover:not(:disabled) {
+  background: #c62828;
+}
+
+.btn-confirm-delete:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 @media screen and (max-width: 768px) {
   .drive-body {
     padding: 12px;
@@ -201,15 +386,15 @@
     padding: 6px 10px;
   }
 
-  /* เหลือแค่ ชื่อไฟล์ + ลิงก์ บน mobile */
-  .drive-table th:nth-child(2),
-  .drive-table td:nth-child(2),
+  /* เหลือแค่ checkbox + ชื่อไฟล์ + ลิงก์ บน mobile */
   .drive-table th:nth-child(3),
   .drive-table td:nth-child(3),
   .drive-table th:nth-child(4),
   .drive-table td:nth-child(4),
   .drive-table th:nth-child(5),
-  .drive-table td:nth-child(5) {
+  .drive-table td:nth-child(5),
+  .drive-table th:nth-child(6),
+  .drive-table td:nth-child(6) {
     display: none;
   }
 

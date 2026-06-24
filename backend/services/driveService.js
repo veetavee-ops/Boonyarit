@@ -68,4 +68,9 @@ async function uploadFileToDrive(buffer, fileName, mimeType, folderId) {
     return res.data.id;
 }
 
-module.exports = { ensureGroupFolder, uploadFileToDrive };
+async function deleteFileFromDrive(fileId) {
+    await drive.files.delete({ fileId });
+    console.log(`🗑️ ลบไฟล์ออกจาก Drive: ${fileId}`);
+}
+
+module.exports = { ensureGroupFolder, uploadFileToDrive, deleteFileFromDrive };
