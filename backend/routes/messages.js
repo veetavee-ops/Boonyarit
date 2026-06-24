@@ -124,14 +124,31 @@ router.post('/summarize-day', async (req, res) => {
 // GET /api/messages/drive-files
 router.get('/drive-files', async (req, res) => {
   try {
-    const where = { messageType: 'file' };
-    if (req.query.groupId) where.groupId = req.query.groupId;
+    const where = { messageType: { [Op.in]: ['file', 'image'] } };
+    const groupId = req.query.groupId;
+
+    if (groupId) {
+      if (groupId.startsWith('private_name_')) {
+        const displayName = groupId.replace('private_name_', '');
+        const users = await User.findAll({ where: { displayName } });
+        const userIds = users.map(u => u.userId);
+        where.userId = { [Op.in]: userIds.length > 0 ? userIds : ['__none__'] };
+        where.groupId = { [Op.or]: [null, ''] };
+      } else if (groupId.startsWith('private_')) {
+        where.userId = groupId.replace('private_', '');
+        where.groupId = { [Op.or]: [null, ''] };
+      } else {
+        where.groupId = groupId;
+      }
+    }
 
     if (req.admin.role === 'user') {
       const allowed = await getAllowedGroupIds(req.admin.id);
-      where.groupId = req.query.groupId && allowed.includes(req.query.groupId)
-        ? req.query.groupId
-        : { [Op.in]: allowed };
+      if (!groupId) {
+        where.groupId = { [Op.in]: allowed.length ? allowed : ['__none__'] };
+      } else if (!groupId.startsWith('private') && !allowed.includes(groupId)) {
+        return res.json([]);
+      }
     }
 
     const messages = await Message.findAll({
@@ -144,17 +161,34 @@ router.get('/drive-files', async (req, res) => {
     });
 
     const files = messages
-      .filter(m => m.metadata?.driveFileId)
-      .map(m => ({
-        id: m.id,
-        fileName: m.metadata.fileName,
-        fileSize: m.metadata.fileSize,
-        driveUrl: `https://drive.google.com/file/d/${m.metadata.driveFileId}/view`,
-        groupName: m.group?.groupName,
-        groupId: m.groupId,
-        uploadedBy: m.user?.displayName,
-        timestamp: m.timestamp,
-      }));
+      .filter(m => m.metadata?.driveFileId || m.metadata?.driveFileIds?.length > 0)
+      .map(m => {
+        if (m.messageType === 'image') {
+          const ids = m.metadata.driveFileIds || [];
+          return {
+            id: m.id,
+            messageType: 'image',
+            fileName: `รูปภาพ (${ids.length} รูป)`,
+            fileSize: null,
+            driveUrl: ids.length > 0 ? `https://drive.google.com/file/d/${ids[0]}/view` : null,
+            groupName: m.group?.groupName || m.user?.displayName,
+            groupId: m.groupId,
+            uploadedBy: m.user?.displayName,
+            timestamp: m.timestamp,
+          };
+        }
+        return {
+          id: m.id,
+          messageType: 'file',
+          fileName: m.metadata.fileName,
+          fileSize: m.metadata.fileSize,
+          driveUrl: `https://drive.google.com/file/d/${m.metadata.driveFileId}/view`,
+          groupName: m.group?.groupName || m.user?.displayName,
+          groupId: m.groupId,
+          uploadedBy: m.user?.displayName,
+          timestamp: m.timestamp,
+        };
+      });
 
     res.json(files);
   } catch (error) {

@@ -30,7 +30,7 @@ export default function DriveFilesPage() {
 
   useEffect(() => {
     axios.get(`${API_BASE}/api/groups`, { withCredentials: true })
-      .then(r => setGroups(Array.isArray(r.data) ? r.data.filter(g => !g.isPrivate) : []))
+      .then(r => setGroups(Array.isArray(r.data) ? r.data : []))
       .catch(() => {})
     axios.get(`${API_BASE}/api/groups/drive-root`, { withCredentials: true })
       .then(r => setDriveRootUrl(r.data.url))
@@ -170,7 +170,7 @@ export default function DriveFilesPage() {
                     <td>{f.uploadedBy || '-'}</td>
                     <td className="cell-muted">{formatFileSize(f.fileSize)}</td>
                     <td className="cell-muted">
-                      {new Date(f.timestamp).toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' })}
+                      {new Date(f.timestamp).toLocaleString('th-TH', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td className="cell-center">
                       <a href={f.driveUrl} target="_blank" rel="noreferrer" className="drive-link">
