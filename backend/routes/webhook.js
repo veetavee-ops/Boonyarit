@@ -221,7 +221,6 @@ async function handleImageMessage(event, userId, groupId, sourceType, message, i
         }
     } catch (e) {
         console.error('❌ User Error (in handleImageMessage):', e.message);
-        throw e;
     }
 
     const buffer = await downloadAsBuffer(message.id);
