@@ -188,13 +188,22 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
 - ดู `PROJECT_OVERVIEW.md` หัวข้อ 14 — flow, edge cases, สิ่งที่ต้องสร้าง
 - ยังไม่ implement — ถ้าต้อง ดู plan ก่อนเสมอ
 
+### ✅ Session 7 — Inactive User Cleanup (26 มิ.ย. 69)
+
+**ทดสอบลบไฟล์จากสารบัญ:** ✅ ผ่าน (Drive + GCS ลบได้จริง)  
+**Backfill script:** ยกเลิก ไม่ทำ
+
+**Implement `cleanupInactiveUsers()` ใน `cleanupService.js`:**
+- วัน 173: query user inactive 172-173 วัน → ส่ง LINE push message เตือน 7 วัน
+- วัน 180: query user inactive > 180 วัน → ลบ GCS files + ลบ messages
+- ข้าม user ที่ `canSearch = true` (ตั้งใจใช้งานอยู่)
+- ใช้ raw SQL `JOIN "Users"` เหมือน pattern ใน messages.js
+- รันใน `startCleanupCron()` ทุกรอบ (ตี 2 ทุกวัน)
+
 ### 🟡 ถัดไป
 
-1. **ทดสอบลบไฟล์** — ลองเลือกลบในสารบัญ เช็คว่าหายจาก Drive + GCS จริง
-2. **Implement Inactive User Cleanup** — ดูแผนใน PROJECT_OVERVIEW.md หัวข้อ 14
-3. **แก้ cleanupExpiredMessages** — ตอนนี้ลบ message ทั้งก้อน อันตรายถ้ามีลูกค้าจริง
-4. **Backfill script** (optional) — รูปเก่าใน Drive ที่ DB ไม่มี driveFileIds
-5. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`
+1. **แก้ cleanupExpiredMessages** — ตอนนี้ลบ message ทั้งก้อน อันตรายถ้ามีลูกค้าจริง
+2. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`
 
 ### 🔑 docker compose restart ไม่โหลด .env ใหม่
 

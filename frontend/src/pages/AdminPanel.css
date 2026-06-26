@@ -225,3 +225,14 @@
   color: var(--primary-color);
 }
 .ap-toggle:hover { border-color: rgba(6,199,85,0.4); }
+
+/* ── Inactive Days Badge ────────────────────────────────────── */
+.ap-inactive-badge {
+  font-size: 12px; font-weight: 600; min-width: 52px; text-align: right;
+  flex-shrink: 0; font-variant-numeric: tabular-nums;
+}
+.ap-inactive-badge--none    { color: var(--text-tertiary); }
+.ap-inactive-badge--safe    { color: var(--text-tertiary); }
+.ap-inactive-badge--caution { color: #f59e0b; }
+.ap-inactive-badge--warn    { color: #ef4444; }
+.ap-inactive-badge--danger  { color: #ef4444; font-weight: 700; }

@@ -246,25 +246,32 @@ export default function AdminPanel() {
           <p className="ap-empty">ยังไม่มี LINE user ในระบบ</p>
         ) : (
           <ul className="ap-line-user-list">
-            {lineUsers.map((u) => (
-              <li key={u.userId} className="ap-line-user-item">
-                {u.pictureUrl ? (
-                  <img className="ap-line-avatar ap-line-avatar--img" src={u.pictureUrl} alt={u.displayName} />
-                ) : (
-                  <div className="ap-line-avatar">{(u.displayName || '?')[0]}</div>
-                )}
-                <div className="ap-line-user-info">
-                  <span className="ap-line-name">{u.displayName || '(ไม่มีชื่อ)'}</span>
-                  <span className="ap-line-uid">{u.userId}</span>
-                </div>
-                <button
-                  className={`ap-toggle${u.canSearch ? ' ap-toggle--on' : ''}`}
-                  onClick={() => handleToggleSearch(u.userId, u.canSearch)}
-                >
-                  {u.canSearch ? 'เปิดอยู่' : 'ปิดอยู่'}
-                </button>
-              </li>
-            ))}
+            {lineUsers.map((u) => {
+              const d = u.inactiveDays;
+              const level = d == null ? 'none' : d >= 180 ? 'danger' : d >= 173 ? 'warn' : d >= 150 ? 'caution' : 'safe';
+              return (
+                <li key={u.userId} className="ap-line-user-item">
+                  {u.pictureUrl ? (
+                    <img className="ap-line-avatar ap-line-avatar--img" src={u.pictureUrl} alt={u.displayName} />
+                  ) : (
+                    <div className="ap-line-avatar">{(u.displayName || '?')[0]}</div>
+                  )}
+                  <div className="ap-line-user-info">
+                    <span className="ap-line-name">{u.displayName || '(ไม่มีชื่อ)'}</span>
+                    <span className="ap-line-uid">{u.userId}</span>
+                  </div>
+                  <span className={`ap-inactive-badge ap-inactive-badge--${level}`}>
+                    {d == null ? '— วัน' : `${d} วัน`}
+                  </span>
+                  <button
+                    className={`ap-toggle${u.canSearch ? ' ap-toggle--on' : ''}`}
+                    onClick={() => handleToggleSearch(u.userId, u.canSearch)}
+                  >
+                    {u.canSearch ? 'เปิดอยู่' : 'ปิดอยู่'}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>

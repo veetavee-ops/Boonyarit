@@ -1,18 +1,29 @@
 const express = require('express');
 const router = express.Router();
+const sequelize = require('../config/database');
 const { User } = require('../models/index');
 const authMiddleware = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/auth');
 
 router.use(authMiddleware, requireAdmin);
 
-// GET /api/line-users — รายชื่อ LINE users ทั้งหมด
+// GET /api/line-users — รายชื่อ LINE users พร้อม inactiveDays (sort มากสุดก่อน)
 router.get('/', async (req, res) => {
   try {
-    const users = await User.findAll({
-      attributes: ['userId', 'displayName', 'pictureUrl', 'canSearch', 'updatedAt'],
-      order: [['updatedAt', 'DESC']],
-    });
+    const [users] = await sequelize.query(`
+      SELECT
+        u."userId",
+        u."displayName",
+        u."pictureUrl",
+        u."canSearch",
+        u."updatedAt",
+        MAX(m."timestamp") AS "lastActive",
+        (EXTRACT(EPOCH FROM (NOW() - MAX(m."timestamp"))) / 86400)::int AS "inactiveDays"
+      FROM "Users" u
+      LEFT JOIN messages m ON m."userId" = u."userId"
+      GROUP BY u."userId", u."displayName", u."pictureUrl", u."canSearch", u."updatedAt"
+      ORDER BY "inactiveDays" DESC NULLS LAST
+    `);
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: err.message });
