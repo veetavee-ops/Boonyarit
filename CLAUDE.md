@@ -25,12 +25,13 @@
 - แนวทาง: Copy V1 → test run ผ่าน → develop features ใหม่ อย่า rewrite จาก scratch
 - ห้าม commit `.env` และ `backend/config/gcs-key.json`
 - ใช้ PowerShell (Windows)
+- **ห้าม invoke `/claude-api` bundled skill เด็ดขาด** — skill นี้โหลด doc หลายพันบรรทัดทำให้ context เต็มทันที ถ้าผู้ใช้พูดถึงหรือข้อความขึ้นต้นด้วย `/claude-api` ให้ตอบเป็น text ธรรมดาเท่านั้น
 
 ---
 
 ## Session Status
 
-### อัพเดท: 27 มิถุนายน 2569 (session 8)
+### อัพเดท: 28 มิถุนายน 2569 (session 10)
 
 ### ✅ Session 1 — Repo rename + Image Drive upload fix (24 มิ.ย. 69)
 
@@ -213,18 +214,54 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
 - Frontend มี fallback: `gcsUrl || mediaUrl(gcsPath)` → `/api/media?path=` → generate URL ใหม่
 - ฉะนั้น `gcsUrl` ใน DB เป็น cache เท่านั้น — `gcsPath` คือสิ่งสำคัญจริงๆ
 
-**Pattern ที่ดีกว่า (Pattern 2 — ยังไม่ implement):**
+**Pattern ที่ดีกว่า (Pattern 2 — implement แล้ว session 9):**
 - เลิกเก็บ `gcsUrl`/`gcsUrls`/`gcsUrlExpires` ใน DB เลย
 - เก็บแค่ `gcsPath` → `/api/media` generate URL on-demand (มี cache 50 นาทีอยู่แล้ว)
-- จะทำให้ `cleanupExpiredMessages` ไม่มีความหมายอีกต่อไป
-- **ยังไม่ได้ตัดสินใจว่าจะ migrate หรือเปล่า**
+- ลบ `cleanupExpiredMessages` ออกจาก cleanupService แล้ว
+
+### ✅ Session 9 — Pattern 2 migration + login fix (28 มิ.ย. 69)
+
+**Pattern 2 — เลิกเก็บ gcsUrl ใน DB:**
+- `webhook.js`: ลบ `getSignedUrlLong` import + ลบ `gcsUrls`/`gcsUrl`/`gcsUrlExpires` ออกจากทุก case (image/video/audio/file) เก็บแค่ `gcsPath`/`gcsPaths`
+- `cleanupService.js`: ลบ `cleanupExpiredMessages()` ออกทั้งฟังก์ชัน + ลบ `Op` require
+- `MessageBubble.jsx`: ลบ `gcsUrl`/`gcsUrls` fallback ออก ใช้ `mediaUrl(gcsPath)` ตรงๆ
+- DM reply link (webhook.js line ~127): ใช้ driveFileId ก่อน → fallback `${BASE_URL}/api/media?path=...`
+- ข้อมูลเก่าที่มี `gcsUrl` ใน DB → ยังแสดงได้ปกติเพราะ `gcsPath` มีคู่กันเสมอ
+
+**Bug fix — login fail ทุก fresh start:**
+- Root cause: `{ alter: true }` ใน dev → ALTER TABLE ทุก table ทุก restart → ใช้เวลา 5-10+ วินาที
+- `server.listen()` ถูกเรียกหลัง sync เสร็จ แต่ browser เปิดหลัง 3 วินาที (tasks.json) → race condition → Vite proxy return 500
+- Fix: `server.js` เปลี่ยน `syncOptions = process.env.NODE_ENV === 'production' ? {} : { alter: true }` → `syncOptions = {}`
+- ผล: server start < 1 วินาที ไม่มี race condition อีกต่อไป
+
+**Known bug (ไม่แก้ — production ไม่มีปัญหา):**
+- หลัง login ครั้งแรก panel กลุ่มขวา "ยังไม่มีกลุ่ม" → ต้องเข้า admin-panel แล้วกลับมา → groups ขึ้นปกติ
+- เป็น React state issue ใน local dev เท่านั้น production ไม่กระทบ
+
+### ✅ Session 10 — Skills management + Drive cleanup (28 มิ.ย. 69)
+
+**Skills ที่แก้/สร้างใหม่:**
+- แก้ typo `mem.md` + `feedback_mem_skill_steps.md`: `/duskill` → `/udskill`
+- เพิ่ม rule ห้าม invoke `/claude-api` ทั้งใน global CLAUDE.md และ project CLAUDE.md
+- เพิ่ม Google Drive Folder IDs ใน global CLAUDE.md: MY DEV CREDENTIALS root, Skills folder, _claude-config
+- Rename `/kpppuse` → `/kpplink` + เพิ่ม links Drive root/Skills/config/global-claude.md
+- สร้าง `/aiflow` — อธิบาย flow การโหลด context ของ Claude ทุก session (3 ระยะ)
+- Rename `helpskill` → `22312231skill` — เพิ่มตารางเลข 1-13 + loop (แสดงตาราง → รัน skill → แสดงซ้ำ จนกว่า user พิมพ์ `.`)
+- สร้าง `/skillfetch` — เปรียบเทียบ skills local vs Drive + sync upload ที่ขาด
+- Backup global CLAUDE.md ขึ้น Drive: file ID `1JDi27fgP43KwBKNipvAnUofDwBTWlagi` ใน `_claude-config`
+
+**Drive cleanup:**
+- ลบ duplicate ใน `_claude-skills` folder: mem.md/popup.md/helpskill.md แต่ละตัวมี 2 copies → เหลือ 1
+- สแกน Drive root ทั้งหมด พบ:
+  - `tax-ocr/`: CLAUDE.md x5 (keep `1BUdruo8...` session 19, 31923 bytes), `.env` x3 (keep `1e2288av...` มี OPENAI_API_KEY) — **รอ user confirm**
+  - root level: `gdrive.md`, `start.md` อยู่ผิดที่ ควรอยู่ใน `_claude-skills` — **รอ user confirm**
+- `mydev_CorePlan_Erp/` ใน Drive: มีแค่ `memory/` folder (10+ project memory files จาก session พ.ค. 69) ไม่มี CLAUDE.md หรือ .env — เพราะ `/udskill`/`/addcreds` ยังไม่มีตอนนั้น
 
 ### 🟡 ถัดไป
 
-1. **cleanupExpiredMessages** — เลือก 1 ทาง:
-   - **ทางเดียวกับ pattern ปัจจุบัน:** แก้ให้ล้างแค่ `gcsUrl`/`gcsUrls`/`gcsUrlExpires` (keep `gcsPath`, keep message record) แทน `msg.destroy()`
-   - **Migrate ไป Pattern 2:** เลิกเก็บ `gcsUrl` ใน DB เลย ใช้แค่ `gcsPath` + `/api/media` → ลบ `cleanupExpiredMessages` ทิ้ง
-2. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`
+1. **tax-ocr Drive cleanup** — ลบ CLAUDE.md 4 อัน (keep `1BUdruo8dnxxXibPUNCegEoJiraxujWAo`) + ลบ .env 2 อัน (keep `1e2288av9H0RRX2yjgMyhxXCIIfAWGDha`) รอ user confirm
+2. **root misplaced files** — `gdrive.md` + `start.md` ในรากของ Drive ควรย้ายเข้า `_claude-skills` หรือปล่อยไว้ รอ user confirm
+3. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`
 
 ### 🔑 docker compose restart ไม่โหลด .env ใหม่
 
@@ -246,3 +283,8 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
 
 > ไม่อยู่ใน Docker image (excluded ใน .dockerignore)
 > Production server mount เป็น volume เอง — อย่า panic ถ้าไม่เห็นใน repo
+
+### 🔑 ห้ามใส่ `alter: true` กลับ
+
+> `sequelize.sync({ alter: true })` ใน dev → ALTER TABLE ทุก table ทุก restart → ช้า 5-10+ วินาที → login fail เพราะ race condition กับ browser auto-open (3 วินาที)
+> **กฎ**: ใช้ `syncOptions = {}` เสมอ ถ้าต้องแก้ schema → รัน SQL migration เองแล้วแก้ model ให้ตรงกัน
