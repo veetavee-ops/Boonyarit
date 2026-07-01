@@ -13,6 +13,13 @@ const Admin = sequelize.define('Admin', {
     unique: true,
     allowNull: false
   },
+  // อีเมลของแอดมิน — ใช้สำหรับส่งลิงก์ "ลืมรหัสผ่าน" เท่านั้น
+  // allowNull: true เพราะ user เก่าที่มีอยู่แล้วยังไม่มีอีเมล
+  email: {
+    type: DataTypes.STRING,
+    unique: true,
+    allowNull: true
+  },
   password: {
     type: DataTypes.STRING,
     allowNull: false
@@ -21,6 +28,10 @@ const Admin = sequelize.define('Admin', {
     type: DataTypes.STRING,
     allowNull: false,
     defaultValue: 'user'
+  },
+  lineUserId: {
+    type: DataTypes.STRING,
+    allowNull: true
   }
 }, {
   tableName: 'admins',

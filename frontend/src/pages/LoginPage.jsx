@@ -103,6 +103,15 @@ export default function LoginPage({ onLogin }) {
           </button>
         </form>
 
+        {/* ลิงก์ไปหน้าลืมรหัสผ่าน — เปลี่ยนหน้าโดยเปลี่ยน URL ตรงๆ (โปรเจกต์นี้ไม่ได้ใช้ react-router) */}
+        <button
+          type="button"
+          className="btn-back"
+          onClick={() => { window.location.href = '/forgot-password' }}
+          style={{ marginTop: 12 }}
+        >
+          ลืมรหัสผ่าน?
+        </button>
       </div>
     </div>
   )

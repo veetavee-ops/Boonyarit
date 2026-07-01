@@ -1,17 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { format } from "date-fns";
-import { checkAuth, logout } from "./api/auth";
+import { checkAuth, logout, updateProfile } from "./api/auth";
 import { useGroups, useMessages } from "./hooks/useMessages";
 import { useSocket } from "./hooks/useSocket";
 import { summarizeDay, searchMessages, toggleImportant } from "./api/messages";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import DriveFilesPage from "./pages/DriveFilesPage";
 import DashboardPage from "./pages/DashboardPage";
 import AdminPanel from "./pages/AdminPanel";
 import Sidebar from "./components/Sidebar/Sidebar";
 import ChatWindow from "./components/ChatWindow/ChatWindow";
 import SummaryModal from "./components/SummaryModal/SummaryModal";
+import ChangePasswordModal from "./components/ChangePasswordModal/ChangePasswordModal";
 import "./App.css";
 
 export default function App() {
@@ -39,6 +42,9 @@ export default function App() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [showLineIdInput, setShowLineIdInput] = useState(false);
+  const [lineIdDraft, setLineIdDraft] = useState('');
+  const [showChangePassword, setShowChangePassword] = useState(false); // true = กำลังเปิด modal เปลี่ยนรหัสผ่านอยู่
   const [showDashboard, setShowDashboard] = useState(false);
   const [aiProvider, setAiProvider] = useState('groq');
 
@@ -113,6 +119,15 @@ export default function App() {
     return <RegisterPage />;
   }
 
+  // หน้า "ลืมรหัสผ่าน" และ "ตั้งรหัสผ่านใหม่" ต้องเข้าได้แม้ยังไม่ได้ล็อกอิน (เพราะ user ลืมรหัสผ่าน = ล็อกอินไม่ได้อยู่แล้ว)
+  // เลยเช็ค pathname ตรงนี้ ก่อนจะถึงจุดที่เช็คว่า login อยู่ไหม (เหมือนกับ /register-admin ด้านบน)
+  if (window.location.pathname === "/forgot-password") {
+    return <ForgotPasswordPage onBack={() => { window.location.href = "/"; }} />;
+  }
+  if (window.location.pathname === "/reset-password") {
+    return <ResetPasswordPage />;
+  }
+
   const handleLogin = (adminData) => {
     setAdmin(adminData);
   };
@@ -120,6 +135,16 @@ export default function App() {
   const handleLogout = async () => {
     await logout();
     setAdmin(null);
+  };
+
+  const handleSaveLineId = async () => {
+    try {
+      await updateProfile({ lineUserId: lineIdDraft.trim() || null });
+      setAdmin((prev) => ({ ...prev, lineUserId: lineIdDraft.trim() || null }));
+      setShowLineIdInput(false);
+    } catch (e) {
+      console.error('Failed to update LINE ID:', e);
+    }
   };
 
   const toggleSidebar = () => {
@@ -246,6 +271,16 @@ export default function App() {
             </svg>
             <span>{admin.username}</span>
           </div>
+          {/* ปุ่มเปิด modal เปลี่ยนรหัสผ่าน — แค่เซ็ต state เป็น true ตัว modal ก็จะโผล่มาเอง (ดูด้านล่างสุดของ JSX) */}
+          <button
+            className="btn-header-icon"
+            onClick={() => setShowChangePassword(true)}
+            title="เปลี่ยนรหัสผ่าน"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+              <path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z" />
+            </svg>
+          </button>
           <button onClick={handleLogout} className="btn-logout">
             <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
               <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z" />
@@ -322,6 +357,11 @@ export default function App() {
 
       {showDriveFiles && (
         <DriveFilesPage onClose={() => setShowDriveFiles(false)} />
+      )}
+
+      {/* modal เปลี่ยนรหัสผ่าน — เด้งขึ้นมาก็ต่อเมื่อ showChangePassword เป็น true เท่านั้น */}
+      {showChangePassword && (
+        <ChangePasswordModal onClose={() => setShowChangePassword(false)} />
       )}
     </div>
   );

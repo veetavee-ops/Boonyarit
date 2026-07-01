@@ -116,7 +116,7 @@ router.get('/me', async (req, res) => {
 
     const decoded = jwt.verify(token, JWT_SECRET);
     const admin = await Admin.findByPk(decoded.id, {
-      attributes: ['id', 'username', 'role']
+      attributes: ['id', 'username', 'role', 'lineUserId']
     });
 
     if (!admin) {
@@ -126,6 +126,24 @@ router.get('/me', async (req, res) => {
     res.json({ admin });
   } catch (error) {
     res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+router.patch('/profile', async (req, res) => {
+  try {
+    const token = req.cookies?.token || req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const admin = await Admin.findByPk(decoded.id);
+    if (!admin) return res.status(401).json({ error: 'Invalid token' });
+
+    const { lineUserId } = req.body;
+    await admin.update({ lineUserId: lineUserId || null });
+
+    res.json({ ok: true, lineUserId: admin.lineUserId });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
