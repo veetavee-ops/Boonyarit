@@ -295,11 +295,11 @@ export default function App() {
             </svg>
             <span>{admin.username}</span>
           </div>
-          {/* ปุ่มเปิด modal เปลี่ยนรหัสผ่าน — แค่เซ็ต state เป็น true ตัว modal ก็จะโผล่มาเอง (ดูด้านล่างสุดของ JSX) */}
+          {/* ปุ่มเปิด modal ตั้งค่าบัญชี (อีเมลกู้คืนรหัสผ่าน + เปลี่ยนรหัสผ่าน) — แค่เซ็ต state เป็น true ตัว modal ก็จะโผล่มาเอง (ดูด้านล่างสุดของ JSX) */}
           <button
             className="btn-header-icon"
             onClick={() => setShowChangePassword(true)}
-            title="เปลี่ยนรหัสผ่าน"
+            title="ตั้งค่าบัญชี"
           >
             <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
               <path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z" />
@@ -381,7 +381,11 @@ export default function App() {
 
       {/* modal เปลี่ยนรหัสผ่าน — เด้งขึ้นมาก็ต่อเมื่อ showChangePassword เป็น true เท่านั้น */}
       {showChangePassword && (
-        <ChangePasswordModal onClose={() => setShowChangePassword(false)} />
+        <ChangePasswordModal
+          onClose={() => setShowChangePassword(false)}
+          currentEmail={admin.email}
+          onEmailSaved={(email) => setAdmin((prev) => ({ ...prev, email }))}
+        />
       )}
 
       {/* modal ขยายรูปโลโก้ — กดที่รูปเล็กบน header แล้วเด้งรูปใหญ่ พร้อมลิงก์ไป achalee.com */}

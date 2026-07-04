@@ -38,14 +38,21 @@ export async function logout() {
 }
 
 /**
- * Update admin profile (lineUserId)
+ * Update admin profile (lineUserId และ/หรือ email) — ส่งเฉพาะ field ที่มีค่า
  */
-export async function updateProfile({ lineUserId }) {
+export async function updateProfile({ lineUserId, email } = {}) {
   const token = localStorage.getItem('token')
-  const res = await axiosInstance.patch('/api/auth/profile', { lineUserId }, {
-    headers: { 'Authorization': `Bearer ${token}` }
-  })
-  return res.data
+  const body = {}
+  if (lineUserId !== undefined) body.lineUserId = lineUserId
+  if (email !== undefined) body.email = email
+  try {
+    const res = await axiosInstance.patch('/api/auth/profile', body, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    })
+    return res.data
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'บันทึกไม่สำเร็จ')
+  }
 }
 
 /**

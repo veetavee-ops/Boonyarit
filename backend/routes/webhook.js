@@ -3,12 +3,25 @@ const router = express.Router();
 const line = require('@line/bot-sdk');
 const { Op } = require('sequelize');
 
-const { Message, User, Group, Setting } = require('../models/index');
+const { Message, User, Group, Setting, Admin, AdminGroup } = require('../models/index');
 const { getProfile, client } = require('../services/lineService');
 const { uploadToGCS, buildGCSPath, getSignedUrlLong } = require('../services/gcsService');
 
 const { ensureGroupFolder, uploadFileToDrive } = require('../services/driveService');
 const { alertError } = require('../services/notifyService');
+
+// ถ้าคนส่งข้อความนี้ผูก LINE ID กับบัญชี admin ไว้ (เมนู "ตั้งค่าบัญชี")
+// ให้สิทธิ์เข้าถึงกลุ่ม/DM นี้ให้อัตโนมัติทันที — ไม่ต้องรอผูก LINE ID ใหม่หรือให้ superadmin ไปติ๊กเพิ่มเอง
+async function autoGrantAccessForMessage(userId, groupId, sourceType) {
+    try {
+        const admin = await Admin.findOne({ where: { lineUserId: userId } });
+        if (!admin) return;
+        const targetGroupId = sourceType === 'group' && groupId ? groupId : `private_${userId}`;
+        await AdminGroup.findOrCreate({ where: { adminId: admin.id, groupId: targetGroupId } });
+    } catch (e) {
+        console.error('❌ Auto-grant access error:', e.message);
+    }
+}
 
 async function isDriveEnabled() {
     const s = await Setting.findByPk('drive_enabled');
@@ -196,6 +209,8 @@ async function handleEvent(event, io) {
             if (enabled) ensureGroupFolder(folderName).catch(e => console.error('Drive folder error:', e.message));
         });
     }
+
+    await autoGrantAccessForMessage(userId, groupId, sourceType);
 
 
     if (message.type === 'image') {

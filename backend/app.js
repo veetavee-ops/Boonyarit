@@ -100,12 +100,25 @@ app.use('/api/settings', settingsRoute);
 
 
 // ===== Serve Frontend (SPA) =====
+// Vite ตั้งชื่อไฟล์ JS/CSS ด้วย content hash (เปลี่ยนชื่อทุกครั้งที่เนื้อหาเปลี่ยน)
+// เลยแคชไฟล์พวกนี้ได้ตลอดไปอย่างปลอดภัย แต่ index.html ต้องห้ามแคชเด็ดขาด
+// ไม่งั้น browser จะค้าง index.html เก่าที่ชี้ไป bundle เก่าที่ไม่มีอยู่แล้วหลัง deploy ใหม่
 const wwwPath = path.join(__dirname, 'www');
-app.use(express.static(wwwPath));
+app.use(express.static(wwwPath, {
+  index: false,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  },
+}));
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/webhook') || req.path.startsWith('/media') || req.path.startsWith('/socket.io')) {
     return next();
   }
+  res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(wwwPath, 'index.html'));
 });
 

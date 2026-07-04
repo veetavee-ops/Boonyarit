@@ -1,17 +1,41 @@
-// Modal (หน้าต่างลอย) สำหรับ "เปลี่ยนรหัสผ่าน" ตอนที่ user login อยู่แล้ว
+// Modal (หน้าต่างลอย) สำหรับ "เปลี่ยนรหัสผ่าน" + "ตั้งอีเมลกู้คืนรหัสผ่าน" ตอนที่ user login อยู่แล้ว
 // ต่างจาก ForgotPasswordPage ตรงที่อันนี้ต้องรู้รหัสผ่านเดิมก่อน (เพราะ login อยู่แล้ว ไม่ใช่ลืมรหัสผ่าน)
 import { useState } from 'react'
-import { changePassword } from '../../api/auth'
+import { changePassword, updateProfile } from '../../api/auth'
 import './ChangePasswordModal.css'
 
 // onClose = ฟังก์ชันปิด modal (เรียกตอนกดปุ่ม X หรือกดพื้นหลังรอบนอก)
-export default function ChangePasswordModal({ onClose }) {
+// currentEmail = อีเมลที่ผูกไว้อยู่ตอนนี้ (อาจเป็น null ถ้ายังไม่เคยตั้ง)
+// onEmailSaved = แจ้ง parent ให้อัปเดต state admin.email หลังบันทึกสำเร็จ
+export default function ChangePasswordModal({ onClose, currentEmail, onEmailSaved }) {
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // --- ส่วนตั้งอีเมลกู้คืนรหัสผ่าน (แยกฟอร์มจากเปลี่ยนรหัสผ่านด้านล่าง) ---
+  const [emailDraft, setEmailDraft] = useState(currentEmail || '')
+  const [emailError, setEmailError] = useState('')
+  const [emailMessage, setEmailMessage] = useState('')
+  const [emailSaving, setEmailSaving] = useState(false)
+
+  const handleSaveEmail = async (e) => {
+    e.preventDefault()
+    setEmailError('')
+    setEmailMessage('')
+    setEmailSaving(true)
+    try {
+      const data = await updateProfile({ email: emailDraft.trim() })
+      onEmailSaved?.(data.email)
+      setEmailMessage('บันทึกอีเมลสำเร็จ')
+    } catch (err) {
+      setEmailError(err.message)
+    } finally {
+      setEmailSaving(false)
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -48,10 +72,33 @@ export default function ChangePasswordModal({ onClose }) {
       {/* stopPropagation กันไม่ให้คลิกข้างในกล่องแล้วโดนตีความว่าคลิก overlay (ปิด modal โดยไม่ตั้งใจ) */}
       <div className="cpw-card" onClick={e => e.stopPropagation()}>
         <div className="cpw-header">
-          <h2>เปลี่ยนรหัสผ่าน</h2>
+          <h2>ตั้งค่าบัญชี</h2>
           <button className="cpw-close" onClick={onClose}>✕</button>
         </div>
 
+        {/* ── อีเมลกู้คืนรหัสผ่าน — ใช้ตอนกด "ลืมรหัสผ่าน" ตอนล็อกอินไม่ได้ ── */}
+        <form onSubmit={handleSaveEmail} className="cpw-form">
+          <div className="cpw-field">
+            <label>อีเมลกู้คืนรหัสผ่าน</label>
+            <input
+              type="email"
+              value={emailDraft}
+              onChange={e => setEmailDraft(e.target.value)}
+              placeholder="you@example.com"
+            />
+          </div>
+
+          {emailError && <div className="cpw-error">⚠️ {emailError}</div>}
+          {emailMessage && <div className="cpw-success">✅ {emailMessage}</div>}
+
+          <button type="submit" className="cpw-submit" disabled={emailSaving}>
+            {emailSaving ? 'กำลังบันทึก...' : 'บันทึกอีเมล'}
+          </button>
+        </form>
+
+        <hr className="cpw-divider" />
+
+        <h3 className="cpw-subtitle">เปลี่ยนรหัสผ่าน</h3>
         <form onSubmit={handleSubmit} className="cpw-form">
           <div className="cpw-field">
             <label>รหัสผ่านเดิม</label>
