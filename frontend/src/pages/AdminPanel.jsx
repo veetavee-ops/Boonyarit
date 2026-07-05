@@ -23,6 +23,10 @@ export default function AdminPanel() {
   const [searchKeyword, setSearchKeyword] = useState('ค้นหา');
   const [searchKeywordSaving, setSearchKeywordSaving] = useState(false);
   const [searchKeywordSaved, setSearchKeywordSaved] = useState(false);
+  // คำสั่งให้ AI สรุปแชทวันนี้ผ่าน LINE bot — แก้เองได้เหมือนกัน (default "สรุป")
+  const [summarizeKeyword, setSummarizeKeyword] = useState('สรุปเลย');
+  const [summarizeKeywordSaving, setSummarizeKeywordSaving] = useState(false);
+  const [summarizeKeywordSaved, setSummarizeKeywordSaved] = useState(false);
 
   useEffect(() => {
     Promise.all([fetchUsers(), fetchGroups()])
@@ -42,6 +46,7 @@ export default function AdminPanel() {
       .then((s) => {
         if (s.drive_enabled !== undefined) setDriveEnabled(s.drive_enabled === 'true');
         if (s.search_keyword) setSearchKeyword(s.search_keyword);
+        if (s.summarize_keyword) setSummarizeKeyword(s.summarize_keyword);
       })
       .catch(() => {});
   }, []);
@@ -71,6 +76,21 @@ export default function AdminPanel() {
       setError('อัปเดตคำสั่งค้นหาไม่สำเร็จ');
     } finally {
       setSearchKeywordSaving(false);
+    }
+  };
+
+  const handleSaveSummarizeKeyword = async () => {
+    const trimmed = summarizeKeyword.trim();
+    if (!trimmed) return;
+    setSummarizeKeywordSaving(true);
+    setSummarizeKeywordSaved(false);
+    try {
+      await updateSetting('summarize_keyword', trimmed);
+      setSummarizeKeywordSaved(true);
+    } catch (err) {
+      setError('อัปเดตคำสั่งสรุปไม่สำเร็จ');
+    } finally {
+      setSummarizeKeywordSaving(false);
     }
   };
 
@@ -316,6 +336,31 @@ export default function AdminPanel() {
               disabled={searchKeywordSaving || !searchKeyword.trim()}
             >
               {searchKeywordSaving ? 'กำลังบันทึก...' : searchKeywordSaved ? 'บันทึกแล้ว ✓' : 'บันทึก'}
+            </button>
+          </div>
+        </div>
+
+        <div className="ap-setting-row">
+          <div className="ap-setting-info">
+            <span className="ap-setting-label">คำสั่งให้ AI สรุปแชทผ่าน LINE bot</span>
+            <span className="ap-setting-desc">
+              พิมพ์คำนี้เดี่ยวๆ = สรุปวันนี้ | พิมพ์ตามด้วยเลข+"วัน" เช่น "{summarizeKeyword}2วัน" = สรุปย้อนหลัง 2 วัน
+              — พิมพ์ในกลุ่มสรุปเฉพาะกลุ่มนั้น พิมพ์ใน DM สรุปทุกกลุ่มที่เป็นสมาชิก
+            </span>
+          </div>
+          <div className="ap-form-row" style={{ flex: '0 0 auto' }}>
+            <input
+              className="ap-input"
+              style={{ width: 140 }}
+              value={summarizeKeyword}
+              onChange={(e) => { setSummarizeKeyword(e.target.value); setSummarizeKeywordSaved(false); }}
+            />
+            <button
+              className="ap-btn-primary"
+              onClick={handleSaveSummarizeKeyword}
+              disabled={summarizeKeywordSaving || !summarizeKeyword.trim()}
+            >
+              {summarizeKeywordSaving ? 'กำลังบันทึก...' : summarizeKeywordSaved ? 'บันทึกแล้ว ✓' : 'บันทึก'}
             </button>
           </div>
         </div>

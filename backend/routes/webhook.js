@@ -9,6 +9,7 @@ const { uploadToGCS, buildGCSPath, getSignedUrlLong } = require('../services/gcs
 
 const { ensureGroupFolder, uploadFileToDrive } = require('../services/driveService');
 const { alertError } = require('../services/notifyService');
+const { summarizeAllChatsForDate } = require('../services/aiService');
 
 // ถ้าคนส่งข้อความนี้ผูก LINE ID กับบัญชี admin ไว้ (เมนู "ตั้งค่าบัญชี")
 // ให้สิทธิ์เข้าถึงกลุ่ม/DM นี้ให้อัตโนมัติทันที — ไม่ต้องรอผูก LINE ID ใหม่หรือให้ superadmin ไปติ๊กเพิ่มเอง
@@ -32,6 +33,21 @@ async function isDriveEnabled() {
 async function getSearchKeyword() {
     const s = await Setting.findByPk('search_keyword');
     return (s?.value || 'ค้นหา').trim();
+}
+
+// คำสั่งให้ AI สรุปแชทผ่าน LINE — ตั้งค่าได้เองในหน้า admin panel เหมือนกัน
+// พิมพ์เดี่ยวๆ = สรุปวันนี้, พิมพ์ตามด้วยเลข+"วัน" (เช่น "สรุปเลย 2 วัน") = สรุปย้อนหลังกี่วัน
+async function getSummarizeKeyword() {
+    const s = await Setting.findByPk('summarize_keyword');
+    return (s?.value || 'สรุปเลย').trim();
+}
+
+// เช็คว่าข้อความเป็นคำสั่งสรุปไหม คืน { isMatch, daysBack } — daysBack = null คือสรุปวันนี้
+function matchSummarizeCommand(text, keyword) {
+    const pattern = new RegExp(`^${escapeRegex(keyword)}\\s*(?:(\\d+)\\s*วัน)?\\s*$`, 'u');
+    const match = (text || '').trim().match(pattern);
+    if (!match) return { isMatch: false, daysBack: null };
+    return { isMatch: true, daysBack: match[1] ? parseInt(match[1], 10) : null };
 }
 
 // escape อักขระพิเศษของ regex กันคำที่ตั้งเองมีอักขระที่ regex ตีความผิด
@@ -176,6 +192,85 @@ async function handleSearchCommand(event, userId, groupId, sourceType, keyword) 
     }
 }
 
+// LINE ข้อความยาวสุด 5000 ตัวอักษร — ตัดให้พอดีกันส่งไม่ออก
+const LINE_TEXT_LIMIT = 5000;
+function truncateForLine(text) {
+    if (text.length <= LINE_TEXT_LIMIT) return text;
+    return text.slice(0, LINE_TEXT_LIMIT - 20) + '\n…(ตัดข้อความ)';
+}
+
+// ─── ให้ AI สรุปแชทผ่าน LINE — ใช้ได้ทั้งในกลุ่มและ DM ────────────────────────
+// กลุ่ม: สรุปเฉพาะแชทของกลุ่มนั้น (ไม่ข้ามไปกลุ่มอื่น กันข้อมูลหลุด)
+// DM: สรุปทุกกลุ่มที่คนนั้นเป็นสมาชิก (เหมือนเลือก "ทุกกลุ่ม" ในหน้าเว็บ)
+// daysBack: null = วันนี้วันเดียว, ตัวเลข = ย้อนหลังกี่วัน (จากคำสั่งเช่น "สรุปเลย 2 วัน")
+async function handleSummarizeCommand(event, userId, groupId, sourceType, daysBack) {
+    const replyToken = event.replyToken;
+    console.log('[Summarize]', sourceType, 'from', userId?.slice(0, 10), 'daysBack:', daysBack);
+
+    try {
+        // "วันนี้" ตามเวลาไทย (UTC+7) ไม่ใช่เวลา server
+        const bkkNow = new Date(Date.now() + 7 * 60 * 60 * 1000);
+        const todayStr = bkkNow.toISOString().slice(0, 10);
+
+        let where;
+        if (daysBack && daysBack > 0) {
+            const cutoff = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+            where = { timestamp: { [Op.gte]: cutoff } };
+        } else {
+            const start = new Date(todayStr + 'T00:00:00.000Z');
+            const end = new Date(todayStr + 'T23:59:59.999Z');
+            where = { timestamp: { [Op.between]: [start, end] } };
+        }
+
+        if (sourceType === 'group' && groupId) {
+            where.groupId = groupId;
+        } else {
+            // DM — สรุปทุกกลุ่มที่ userId นี้เคยส่งข้อความ (เป็นสมาชิกอยู่)
+            const userGroups = await Message.findAll({
+                attributes: ['groupId'],
+                where: { userId, sourceType: 'group', groupId: { [Op.not]: null } },
+                group: ['groupId'],
+                raw: true,
+            });
+            const groupIds = userGroups.map((m) => m.groupId);
+            if (groupIds.length === 0) {
+                await client.replyMessage(replyToken, { type: 'text', text: '📋 ไม่พบกลุ่มที่คุณเป็นสมาชิกครับ' }).catch(() => {});
+                return;
+            }
+            where.groupId = { [Op.in]: groupIds };
+        }
+
+        const messages = await Message.findAll({
+            where,
+            include: [
+                { model: User, as: 'user', attributes: ['displayName'] },
+                { model: Group, as: 'group', attributes: ['groupName'] },
+            ],
+            order: [['timestamp', 'ASC']],
+            limit: 2000,
+        });
+
+        if (messages.length === 0) {
+            const label = daysBack ? `ย้อนหลัง ${daysBack} วัน` : 'วันนี้';
+            await client.replyMessage(replyToken, { type: 'text', text: `📋 ${label}ยังไม่มีข้อความให้สรุปครับ` }).catch(() => {});
+            return;
+        }
+
+        const result = await summarizeAllChatsForDate(messages, 'groq');
+        const rangeLabel = daysBack ? `ย้อนหลัง ${daysBack} วัน` : 'วันนี้';
+        const reply = `📋 สรุปแชท${rangeLabel} (${result.messageCount} ข้อความ)\n\n${result.summary}`;
+
+        await client.replyMessage(replyToken, { type: 'text', text: truncateForLine(reply) })
+            .catch(e => console.error('[Summarize] replyMessage error:', e.message));
+    } catch (err) {
+        console.error('[Summarize Error]', err.message);
+        await client.replyMessage(replyToken, {
+            type: 'text',
+            text: '❌ สรุปแชทไม่สำเร็จ กรุณาลองใหม่'
+        }).catch(e => console.error('[Summarize] replyMessage error:', e.message));
+    }
+}
+
 async function handleEvent(event, io) {
     console.log('[Event]', event.type, event.source?.type, event.source?.userId?.slice(0, 10));
     if (event.type !== 'message') return;
@@ -193,31 +288,41 @@ async function handleEvent(event, io) {
     if (message.type === 'text') {
         const searchKeyword = await getSearchKeyword();
         const isSearchCommand = new RegExp(`^${escapeRegex(searchKeyword)}\\s+`, 'u').test(message.text || '');
+        const summarizeKeyword = await getSummarizeKeyword();
+        const { isMatch: isSummarizeCommand, daysBack } = matchSummarizeCommand(message.text, summarizeKeyword);
 
-        // ในกลุ่ม — ใครก็พิมพ์คำสั่งค้นหาได้ (ค้นหาแค่ไฟล์ในกลุ่มนั้น ไม่ข้ามไปกลุ่มอื่น)
-        if (isSearchCommand && sourceType === 'group') {
-            await handleSearchCommand(event, userId, groupId, sourceType, searchKeyword);
-            return;
-        }
-
-        if (sourceType === 'user') {
-            // คำสั่งค้นหา ใช้ได้เสมอถ้าเป็น admin ที่ผูก LINE ID ไว้ (ไม่ต้องพึ่ง canSearch)
-            if (isSearchCommand && linkedAdmin) {
+        // ในกลุ่ม — ใครก็พิมพ์คำสั่งค้นหา/สรุปได้ (จำกัดแค่ข้อมูลของกลุ่มนั้น ไม่ข้ามไปกลุ่มอื่น)
+        if (sourceType === 'group') {
+            if (isSearchCommand) {
                 await handleSearchCommand(event, userId, groupId, sourceType, searchKeyword);
                 return;
             }
+            if (isSummarizeCommand) {
+                await handleSummarizeCommand(event, userId, groupId, sourceType, daysBack);
+                return;
+            }
+        }
 
-            // ── User DM (ลูกค้าทั่วไป ไม่ได้ผูกกับ admin คนไหน): ตรวจสิทธิ์ก่อน ถ้า canSearch=true ค้นหาได้ ถ้าไม่มีสิทธิ์ → ignore ─
+        if (sourceType === 'user') {
+            // คำสั่งค้นหา/สรุป ใช้ได้เสมอถ้าเป็น admin ที่ผูก LINE ID ไว้ (ไม่ต้องพึ่ง canSearch)
+            if (linkedAdmin && (isSearchCommand || isSummarizeCommand)) {
+                if (isSearchCommand) await handleSearchCommand(event, userId, groupId, sourceType, searchKeyword);
+                else await handleSummarizeCommand(event, userId, groupId, sourceType, daysBack);
+                return;
+            }
+
+            // ── User DM (ลูกค้าทั่วไป ไม่ได้ผูกกับ admin คนไหน): ตรวจสิทธิ์ก่อน ถ้า canSearch=true ใช้คำสั่งได้ ถ้าไม่มีสิทธิ์ → ignore ─
             if (!linkedAdmin) {
                 const lineUser = await User.findByPk(userId);
                 if (lineUser?.canSearch) {
-                    await handleSearchCommand(event, userId, groupId, sourceType, searchKeyword);
+                    if (isSummarizeCommand) await handleSummarizeCommand(event, userId, groupId, sourceType, daysBack);
+                    else await handleSearchCommand(event, userId, groupId, sourceType, searchKeyword);
                     return;
                 }
                 // ไม่มีสิทธิ์ → ignore เงียบๆ ไม่ตอบกลับ ไม่บันทึก
                 return;
             }
-            // linkedAdmin + ข้อความทั่วไป (ไม่ใช่คำสั่งค้นหา) → ปล่อยผ่านไปบันทึกเป็นแชทปกติด้านล่าง
+            // linkedAdmin + ข้อความทั่วไป (ไม่ใช่คำสั่งค้นหา/สรุป) → ปล่อยผ่านไปบันทึกเป็นแชทปกติด้านล่าง
         }
     }
 
