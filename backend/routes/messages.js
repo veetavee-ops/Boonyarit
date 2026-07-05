@@ -19,13 +19,20 @@ async function getAllowedGroupIds(adminId) {
 // Returns ALL messages for the selected group/private chat (no date filter)
 router.get('/', async (req, res) => {
   try {
-    const { groupId, limit = 50, before } = req.query;
+    const { groupId, limit = 50, before, sinceDays } = req.query;
 
     if (!groupId) {
       return res.status(400).json({ error: 'groupId is required' });
     }
 
     const where = {};
+
+    // จำกัดว่าจะโหลดข้อความย้อนหลังกี่วัน (ตัวเลือก "load กี่วันย้อนหลัง" ฝั่ง frontend)
+    if (sinceDays) {
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - parseInt(sinceDays, 10));
+      where.timestamp = { [Op.gte]: cutoff };
+    }
 
     if (groupId.startsWith('private_name_')) {
       // New format: find ALL users with this displayName, merge their messages
@@ -50,9 +57,9 @@ router.get('/', async (req, res) => {
       }
     }
 
-    // Pagination: fetch messages older than `before` timestamp
+    // Pagination: fetch messages older than `before` timestamp — รวมกับ sinceDays ด้านบน (ถ้ามี) ไม่ให้ทับกัน
     if (before) {
-      where.timestamp = { [Op.lt]: new Date(before) };
+      where.timestamp = { ...where.timestamp, [Op.lt]: new Date(before) };
     }
 
     const messages = await Message.findAll({
@@ -71,6 +78,49 @@ router.get('/', async (req, res) => {
     res.json(messages);
   } catch (error) {
     console.error('[ERROR] GET /api/messages:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE /api/messages — ลบข้อความถาวร (ทีละอันหรือหลายอันพร้อมกัน) + ลบไฟล์แนบใน GCS/Drive ด้วย
+// body: { messageIds: ["uuid", ...] }
+router.delete('/', async (req, res) => {
+  try {
+    const { messageIds } = req.body;
+    if (!Array.isArray(messageIds) || messageIds.length === 0) {
+      return res.status(400).json({ error: 'messageIds required' });
+    }
+
+    const messages = await Message.findAll({ where: { id: { [Op.in]: messageIds } } });
+
+    // role 'user' ลบได้เฉพาะข้อความในกลุ่มที่ตัวเองมีสิทธิ์เข้าถึงเท่านั้น
+    let targets = messages;
+    if (req.admin.role === 'user') {
+      const allowed = await getAllowedGroupIds(req.admin.id);
+      const allowedSet = new Set(allowed);
+      targets = messages.filter((m) => allowedSet.has(m.groupId || `private_${m.userId}`));
+    }
+
+    for (const m of targets) {
+      const driveIds = m.metadata?.driveFileIds || (m.metadata?.driveFileId ? [m.metadata.driveFileId] : []);
+      const gcsPaths = m.metadata?.gcsPaths || (m.metadata?.gcsPath ? [m.metadata.gcsPath] : []);
+
+      for (const fileId of driveIds) {
+        await deleteFileFromDrive(fileId).catch((e) => console.error('Drive del fail:', e.message));
+      }
+      for (const gcsPath of gcsPaths) {
+        await deleteFromGCS(gcsPath).catch((e) => console.error('GCS del fail:', e.message));
+      }
+    }
+
+    const deletedIds = targets.map((m) => m.id);
+    await Message.destroy({ where: { id: { [Op.in]: deletedIds } } });
+
+    req.app.locals.io.emit('messages-deleted', { messageIds: deletedIds });
+
+    res.json({ deleted: targets.length });
+  } catch (error) {
+    console.error('[ERROR] DELETE /api/messages:', error);
     res.status(500).json({ error: error.message });
   }
 });

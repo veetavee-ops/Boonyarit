@@ -189,3 +189,48 @@
   background: rgba(249,115,22,0.25); color: var(--text-primary);
   border-radius: 2px; padding: 0 1px;
 }
+
+/* ── Days-back selector (โหลดข้อความย้อนหลังกี่วัน) ─────────────── */
+.days-back-select {
+  padding: 7px 10px; border: 1px solid var(--border-color);
+  border-radius: 20px; font-size: 12px; font-weight: 500;
+  background: var(--bg-surface); color: var(--text-secondary);
+  cursor: pointer; font-family: 'Kanit', sans-serif;
+}
+
+/* ── Select mode bar (เลือกข้อความเพื่อลบ) ─────────────────────── */
+.select-mode-bar {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 20px; background: rgba(249,115,22,0.08);
+  border-bottom: 1px solid var(--border-color); flex-shrink: 0;
+}
+.select-mode-count { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.select-mode-actions { display: flex; gap: 8px; }
+
+/* ── Confirm delete modal (ใช้ร่วมกับ ChatWindow + DriveFilesPage) ── */
+.drive-overlay {
+  position: fixed; inset: 0; background: rgba(58,47,38,0.35);
+  display: flex; align-items: center; justify-content: center; z-index: 2000;
+}
+.drive-confirm {
+  background: var(--bg-sidebar); border: 1px solid var(--border-color);
+  border-radius: 16px; padding: 24px; width: 100%; max-width: 340px;
+  text-align: center; box-shadow: 0 24px 64px rgba(90,66,42,0.25);
+}
+.drive-confirm-icon { font-size: 32px; margin-bottom: 8px; }
+.drive-confirm h3 { margin: 0 0 8px; font-size: 16px; color: var(--text-primary); }
+.drive-confirm p { margin: 4px 0; font-size: 13px; color: var(--text-secondary); }
+.drive-confirm-warn { color: #b91c1c !important; font-size: 12px !important; }
+.drive-confirm-actions { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
+.btn-cancel {
+  padding: 9px 18px; border-radius: 10px; border: 1px solid var(--border-color);
+  background: var(--bg-surface); color: var(--text-secondary); cursor: pointer; font-weight: 600;
+  font-family: 'Kanit', sans-serif;
+}
+.btn-confirm-delete {
+  padding: 9px 18px; border-radius: 10px; border: none;
+  background: #dc2626; color: white; cursor: pointer; font-weight: 600;
+  font-family: 'Kanit', sans-serif;
+}
+.btn-confirm-delete:disabled, .btn-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-confirm-delete:hover:not(:disabled) { background: #b91c1c; }

@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { checkAuth, logout, updateProfile } from "./api/auth";
 import { useGroups, useMessages } from "./hooks/useMessages";
 import { useSocket } from "./hooks/useSocket";
-import { summarizeDay, searchMessages, toggleImportant } from "./api/messages";
+import { summarizeDay, searchMessages, toggleImportant, deleteMessages } from "./api/messages";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
@@ -12,6 +12,7 @@ import DriveFilesPage from "./pages/DriveFilesPage";
 import DashboardPage from "./pages/DashboardPage";
 import AdminPanel from "./pages/AdminPanel";
 import Sidebar from "./components/Sidebar/Sidebar";
+import SummarySidebar from "./components/SummarySidebar/SummarySidebar";
 import ChatWindow from "./components/ChatWindow/ChatWindow";
 import SummaryModal from "./components/SummaryModal/SummaryModal";
 import ChangePasswordModal from "./components/ChangePasswordModal/ChangePasswordModal";
@@ -42,15 +43,19 @@ export default function App() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSummarySidebarOpen, setIsSummarySidebarOpen] = useState(false);
   const [showLogoModal, setShowLogoModal] = useState(false);
   // ปักหมุด sidebar ไว้ → ต้องบีบพื้นที่แชทให้แคบลงเท่ากับความกว้าง sidebar
   // ไม่งั้น sidebar จะลอยทับบังข้อความฝั่งซ้ายของแชท
   const [pinnedSidebarWidth, setPinnedSidebarWidth] = useState(0);
+  const [pinnedSummarySidebarWidth, setPinnedSummarySidebarWidth] = useState(0);
   const [showLineIdInput, setShowLineIdInput] = useState(false);
   const [lineIdDraft, setLineIdDraft] = useState('');
   const [showChangePassword, setShowChangePassword] = useState(false); // true = กำลังเปิด modal เปลี่ยนรหัสผ่านอยู่
   const [showDashboard, setShowDashboard] = useState(false);
   const [aiProvider, setAiProvider] = useState('groq');
+  // "load กี่วันย้อนหลัง" ของแชทที่เปิดอยู่ — null = โหลดทั้งหมด (ไม่จำกัดวัน) เหมือนเดิม
+  const [daysBack, setDaysBack] = useState(null);
 
   const { groups, loading: groupsLoading } = useGroups(refreshKey);
   const {
@@ -61,7 +66,8 @@ export default function App() {
     loadMore,
     addMessage,
     updateMessage,
-  } = useMessages(selectedGroup);
+    removeMessages,
+  } = useMessages(selectedGroup, daysBack);
 
   const handleNewMessage = useCallback(
     (newMessage) => {
@@ -80,7 +86,19 @@ export default function App() {
     [addMessage, selectedGroup],
   );
 
-  useSocket(selectedGroup, handleNewMessage);
+  // คนอื่น (หรือแท็บอื่น) ลบข้อความไป — เอาออกจาก state ทันทีถ้ากำลังดูอยู่
+  const handleMessagesDeleted = useCallback(
+    ({ messageIds }) => removeMessages(messageIds),
+    [removeMessages],
+  );
+
+  useSocket(selectedGroup, handleNewMessage, handleMessagesDeleted);
+
+  // ลบข้อความถาวร (เดี่ยวหรือหลายอัน) — เรียกจาก ChatWindow ตอนกดยืนยันลบ
+  const handleDeleteMessages = async (messageIds) => {
+    await deleteMessages(messageIds);
+    removeMessages(messageIds);
+  };
 
   useEffect(() => {
     clearTimeout(searchDebounceRef.current);
@@ -157,6 +175,14 @@ export default function App() {
 
   const closeSidebar = () => {
     setIsSidebarOpen(false);
+  };
+
+  const toggleSummarySidebar = () => {
+    setIsSummarySidebarOpen((prev) => !prev);
+  };
+
+  const closeSummarySidebar = () => {
+    setIsSummarySidebarOpen(false);
   };
 
   if (authLoading) {
@@ -243,8 +269,8 @@ export default function App() {
           <button
             className="menu-btn"
             onClick={toggleSidebar}
-            aria-label="ตั้งค่าการสรุป AI"
-            title="ตั้งค่าการสรุป AI"
+            aria-label="กลุ่มแชท"
+            title="กลุ่มแชท"
           >
             <svg viewBox="0 0 24 24" fill="currentColor" width="19" height="19">
               <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" />
@@ -295,6 +321,17 @@ export default function App() {
             </svg>
             <span>{admin.username}</span>
           </div>
+          {/* ปุ่มเปิด sidebar ขวา — ตั้งค่าการสรุป AI (ย้ายมาจาก sidebar ซ้ายเดิม) */}
+          <button
+            className="btn-header-icon"
+            onClick={toggleSummarySidebar}
+            aria-label="ตั้งค่าการสรุป AI"
+            title="ตั้งค่าการสรุป AI"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z" />
+            </svg>
+          </button>
           {/* ปุ่มเปิด modal ตั้งค่าบัญชี (อีเมลกู้คืนรหัสผ่าน + เปลี่ยนรหัสผ่าน) — แค่เซ็ต state เป็น true ตัว modal ก็จะโผล่มาเอง (ดูด้านล่างสุดของ JSX) */}
           <button
             className="btn-header-icon"
@@ -316,7 +353,10 @@ export default function App() {
 
       <div
         className="app-body"
-        style={pinnedSidebarWidth ? { paddingLeft: pinnedSidebarWidth + 12 } : undefined}
+        style={{
+          ...(pinnedSidebarWidth ? { paddingLeft: pinnedSidebarWidth + 12 } : {}),
+          ...(pinnedSummarySidebarWidth ? { paddingRight: pinnedSummarySidebarWidth + 12 } : {}),
+        }}
       >
         {showDashboard ? (
           <DashboardPage
@@ -340,29 +380,37 @@ export default function App() {
             onSelectGroup={(groupId) => { setSelectedGroup(groupId); setSearch(''); }}
             onToggleImportant={handleToggleImportant}
             myLineUserId={admin.lineUserId}
+            daysBack={daysBack}
+            onDaysBackChange={setDaysBack}
+            onDeleteMessages={handleDeleteMessages}
           />
         )}
         <Sidebar
           isOpen={isSidebarOpen}
           onClose={closeSidebar}
-          refreshKey={refreshKey}
-          selectedDate={selectedDate}
           selectedGroup={selectedGroup}
           realGroups={realGroups}
           privateChats={privateChats}
           groupSortBy={groupSortBy}
           onSortChange={setGroupSortBy}
-          onSelectDate={setSelectedDate}
           onSelectGroup={(groupId) => {
             setSelectedGroup(groupId);
             closeSidebar();
           }}
+          onOpenDriveFiles={() => setShowDriveFiles(true)}
+          onPinChange={setPinnedSidebarWidth}
+        />
+        <SummarySidebar
+          isOpen={isSummarySidebarOpen}
+          onClose={closeSummarySidebar}
+          refreshKey={refreshKey}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
           onSummarizeDay={handleSummarizeDay}
           onRangeChange={setDateRange}
           aiProvider={aiProvider}
           onAiProviderChange={setAiProvider}
-          onOpenDriveFiles={() => setShowDriveFiles(true)}
-          onPinChange={setPinnedSidebarWidth}
+          onPinChange={setPinnedSummarySidebarWidth}
         />
       </div>
 

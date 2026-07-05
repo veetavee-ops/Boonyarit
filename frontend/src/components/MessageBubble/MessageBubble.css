@@ -30,6 +30,27 @@
   margin-top: 15px;
 }
 
+/* ─── Select mode (เลือกข้อความเพื่อลบ) ──────────────────────────────────── */
+.msg-select-checkbox {
+  align-self: center;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  cursor: pointer;
+  accent-color: var(--primary-color, #d97742);
+}
+.msg--select-mode {
+  padding: 4px 6px;
+  border-radius: 10px;
+  transition: background 0.15s;
+}
+.msg--select-mode:hover {
+  background: rgba(217, 119, 66, 0.06);
+}
+.msg--selected {
+  background: rgba(217, 119, 66, 0.12);
+}
+
 /* ─── Own Message (matches logged-in admin's linked LINE ID) → right side ── */
 .msg--own {
   flex-direction: row-reverse;

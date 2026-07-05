@@ -1,0 +1,95 @@
+/* Sidebar ด้านขวา — layout เหมือน Sidebar ซ้าย (Sidebar.css) แค่ยึดขอบขวาแทน
+   คลาส form control ที่ใช้ร่วมกัน (.input-label, .date-dropdown, .range-select,
+   .date-select-wrapper, .btn-summarize-day, .btn-summarize-model, .date-hint)
+   มาจาก Sidebar.css — โหลดมาด้วยกันเสมอเพราะ Sidebar.jsx ยังอยู่ในหน้าเดียวกัน */
+
+.summary-sidebar {
+  position: fixed;
+  top: 0;
+  height: 100%;
+  min-width: 200px;
+  max-width: 1000px;
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+  z-index: 101;
+  transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: -4px 0 32px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.summary-sidebar--pinned {
+  box-shadow: none;
+}
+
+.summary-sidebar-resize-handle {
+  position: absolute;
+  top: 0; left: 0;
+  width: 6px; height: 100%;
+  cursor: ew-resize;
+  z-index: 10;
+}
+.summary-sidebar-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 2px;
+  width: 2px; height: 100%;
+  background: transparent;
+  transition: background 0.15s;
+}
+.summary-sidebar-resize-handle:hover::after { background: var(--primary-color); }
+
+.summary-sidebar-hover-trigger {
+  position: fixed;
+  top: 0; right: 0;
+  width: 10px; height: 100%;
+  z-index: 100;
+}
+
+.summary-sidebar-pin-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 6px;
+  display: flex;
+  transition: all 0.15s;
+  transform: rotate(45deg);
+  flex-shrink: 0;
+}
+.summary-sidebar-pin-btn:hover { background: rgba(58,47,38,0.08); color: var(--text-primary); }
+.summary-sidebar-pin-btn--active { color: var(--primary-color); transform: rotate(0deg); }
+
+.summary-sidebar-header {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 14px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.summary-sidebar-brand-title {
+  font-size: 13px; font-weight: 700;
+  color: var(--text-primary); line-height: 1.3; letter-spacing: 0.2px;
+}
+.summary-sidebar-brand-sub {
+  font-size: 10.5px; color: var(--text-tertiary); font-weight: 400; margin-top: 1px;
+}
+
+.summary-sidebar-content {
+  flex: 1; overflow-y: auto;
+  padding: 14px;
+  display: flex; flex-direction: column; gap: 9px;
+  background: var(--bg-sidebar);
+}
+.summary-sidebar-content::-webkit-scrollbar { width: 3px; }
+.summary-sidebar-content::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+
+.summary-sidebar-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6); z-index: 100;
+  opacity: 0; transition: opacity 0.3s; pointer-events: none;
+}
+.summary-sidebar-overlay.active { display: block; opacity: 1; pointer-events: auto; }
