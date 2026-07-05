@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { fetchAvailableDates, fetchActiveGroups } from "../../api/messages";
-import { formatDateLabel } from "../../utils/helpers";
+import { formatDateLabel, getInitials, getColor } from "../../utils/helpers";
 import "./SummarySidebar.css";
 
 const RANGE_VALUES = [1, 2, 3, 5, 7, 14, 30, 60, 90];
@@ -33,6 +33,8 @@ export default function SummarySidebar({
   const [loadingDates, setLoadingDates] = useState(true);
   const [activeGroups, setActiveGroups] = useState([]);
   const [summarizeGroupId, setSummarizeGroupId] = useState("all");
+  // เปิด/ปิด dropdown เลือกกลุ่ม (แบบ custom เพื่อโชว์ไอคอนกลุ่มได้ — native <select> ใส่รูปไม่ได้)
+  const [groupPickerOpen, setGroupPickerOpen] = useState(false);
 
   // Resize state
   const [sidebarWidth, setSidebarWidth] = useState(280);
@@ -154,6 +156,16 @@ export default function SummarySidebar({
     onRangeChange?.({ rangeValue, rangeUnit });
   }, [rangeValue, rangeUnit]);
 
+  // ปิด dropdown เลือกกลุ่มเมื่อคลิกที่อื่นนอก dropdown
+  useEffect(() => {
+    if (!groupPickerOpen) return;
+    const close = () => setGroupPickerOpen(false);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [groupPickerOpen]);
+
+  const selectedGroupInfo = activeGroups.find((g) => g.groupId === summarizeGroupId);
+
   return (
     <>
       <div
@@ -246,7 +258,7 @@ export default function SummarySidebar({
             <div className="date-hint">เลือกวันเพื่อให้ AI สรุปแชทของวันนั้น</div>
           </div>
 
-          {/* ── Group selector for summarization ── */}
+          {/* ── Group selector for summarization (custom dropdown — โชว์ไอคอนกลุ่มได้) ── */}
           <div className="date-select-wrapper">
             <label className="input-label">
               <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12">
@@ -254,16 +266,72 @@ export default function SummarySidebar({
               </svg>
               กลุ่มที่จะสรุป
             </label>
-            <select
-              className="date-dropdown"
-              value={summarizeGroupId}
-              onChange={(e) => setSummarizeGroupId(e.target.value)}
-            >
-              <option value="all">ทุกกลุ่ม ({activeGroups.length} กลุ่ม)</option>
-              {activeGroups.map((g) => (
-                <option key={g.groupId} value={g.groupId}>{g.groupName}</option>
-              ))}
-            </select>
+            <div className="group-picker">
+              <button
+                type="button"
+                className="group-picker-btn"
+                onClick={(e) => { e.stopPropagation(); setGroupPickerOpen((v) => !v); }}
+              >
+                {selectedGroupInfo ? (
+                  <>
+                    {selectedGroupInfo.pictureUrl ? (
+                      <img className="group-picker-avatar group-picker-avatar--img" src={selectedGroupInfo.pictureUrl} alt="" />
+                    ) : (
+                      <span className="group-picker-avatar" style={{ background: getColor(selectedGroupInfo.groupName) }}>
+                        {getInitials(selectedGroupInfo.groupName)}
+                      </span>
+                    )}
+                    <span className="group-picker-name">{selectedGroupInfo.groupName}</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="group-picker-avatar group-picker-avatar--all">
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                        <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+                      </svg>
+                    </span>
+                    <span className="group-picker-name">ทุกกลุ่ม ({activeGroups.length} กลุ่ม)</span>
+                  </>
+                )}
+                <svg className="group-picker-chevron" viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                  <path d="M7 10l5 5 5-5z" />
+                </svg>
+              </button>
+
+              {groupPickerOpen && (
+                <div className="group-picker-list" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    type="button"
+                    className={`group-picker-item${summarizeGroupId === 'all' ? ' group-picker-item--active' : ''}`}
+                    onClick={() => { setSummarizeGroupId('all'); setGroupPickerOpen(false); }}
+                  >
+                    <span className="group-picker-avatar group-picker-avatar--all">
+                      <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                        <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
+                      </svg>
+                    </span>
+                    <span className="group-picker-name">ทุกกลุ่ม ({activeGroups.length} กลุ่ม)</span>
+                  </button>
+                  {activeGroups.map((g) => (
+                    <button
+                      type="button"
+                      key={g.groupId}
+                      className={`group-picker-item${summarizeGroupId === g.groupId ? ' group-picker-item--active' : ''}`}
+                      onClick={() => { setSummarizeGroupId(g.groupId); setGroupPickerOpen(false); }}
+                    >
+                      {g.pictureUrl ? (
+                        <img className="group-picker-avatar group-picker-avatar--img" src={g.pictureUrl} alt="" />
+                      ) : (
+                        <span className="group-picker-avatar" style={{ background: getColor(g.groupName) }}>
+                          {getInitials(g.groupName)}
+                        </span>
+                      )}
+                      <span className="group-picker-name">{g.groupName}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* ── AI Provider selector ── */}

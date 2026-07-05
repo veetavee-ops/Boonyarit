@@ -2,8 +2,9 @@
 /* Popup panel — เลื่อนออกจากขอบซ้ายจอ ปุ่มเปิดอยู่มุมซ้ายบนของ header */
 .sidebar {
   position: fixed;
-  top: 0;
-  height: 100%;
+  /* เริ่มใต้ header เสมอ ไม่ทับปุ่มเมนู/ภาพรวมใน header ตอนปักหมุด */
+  top: var(--header-height);
+  height: calc(100% - var(--header-height));
   min-width: 200px;
   max-width: 1000px;
   background: var(--bg-sidebar);
@@ -41,8 +42,8 @@
 /* ─── Hover-peek trigger (แถบบางๆ ชิดขอบซ้ายจอ) ───────────────── */
 .sidebar-hover-trigger {
   position: fixed;
-  top: 0; left: 0;
-  width: 10px; height: 100%;
+  top: var(--header-height); left: 0;
+  width: 10px; height: calc(100% - var(--header-height));
   z-index: 100;
 }
 

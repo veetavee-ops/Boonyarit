@@ -5,8 +5,9 @@
 
 .summary-sidebar {
   position: fixed;
-  top: 0;
-  height: 100%;
+  /* เริ่มใต้ header เสมอ ไม่ทับปุ่มตั้งค่าบัญชี/ออกจากระบบใน header ตอนปักหมุด */
+  top: var(--header-height);
+  height: calc(100% - var(--header-height));
   min-width: 200px;
   max-width: 1000px;
   background: var(--bg-sidebar);
@@ -42,8 +43,8 @@
 
 .summary-sidebar-hover-trigger {
   position: fixed;
-  top: 0; right: 0;
-  width: 10px; height: 100%;
+  top: var(--header-height); right: 0;
+  width: 10px; height: calc(100% - var(--header-height));
   z-index: 100;
 }
 
@@ -93,3 +94,49 @@
   opacity: 0; transition: opacity 0.3s; pointer-events: none;
 }
 .summary-sidebar-overlay.active { display: block; opacity: 1; pointer-events: auto; }
+
+/* ── Group picker (custom dropdown ที่โชว์ไอคอนกลุ่มได้ แทน native <select>) ── */
+.group-picker { position: relative; }
+
+.group-picker-btn {
+  width: 100%; padding: 7px 10px;
+  border-radius: 8px; border: 1px solid var(--border-color);
+  background: var(--bg-surface); cursor: pointer; outline: none;
+  display: flex; align-items: center; gap: 8px; text-align: left;
+  font-family: 'Kanit', sans-serif; transition: all 0.2s;
+}
+.group-picker-btn:hover { border-color: rgba(249,115,22,0.3); }
+
+.group-picker-avatar {
+  width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  color: white; font-weight: 700; font-size: 10px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+.group-picker-avatar--img { object-fit: cover; }
+.group-picker-avatar--all { background: var(--text-tertiary); }
+
+.group-picker-name {
+  flex: 1; min-width: 0; font-size: 13px; color: var(--text-primary);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.group-picker-chevron { color: var(--text-tertiary); flex-shrink: 0; }
+
+.group-picker-list {
+  position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 200;
+  max-height: 260px; overflow-y: auto;
+  background: var(--bg-surface); border: 1px solid var(--border-color);
+  border-radius: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+  padding: 6px 0;
+}
+
+.group-picker-item {
+  width: 100%; padding: 7px 12px;
+  background: transparent; border: none; cursor: pointer; text-align: left;
+  display: flex; align-items: center; gap: 8px;
+  font-family: 'Kanit', sans-serif; transition: background 0.1s;
+}
+.group-picker-item:hover { background: rgba(58,47,38,0.06); }
+.group-picker-item--active { background: rgba(249,115,22,0.1); }
+.group-picker-item--active .group-picker-name { color: var(--primary-color); font-weight: 600; }
