@@ -19,6 +19,10 @@ export default function AdminPanel() {
   const [lineUsersLoading, setLineUsersLoading] = useState(true);
   const [driveEnabled, setDriveEnabled] = useState(true);
   const [driveToggling, setDriveToggling] = useState(false);
+  // คำสั่งค้นหาไฟล์ผ่าน LINE bot — แก้เองได้ตรงนี้ ไม่ต้องแก้โค้ด (default "ค้นหา")
+  const [searchKeyword, setSearchKeyword] = useState('ค้นหา');
+  const [searchKeywordSaving, setSearchKeywordSaving] = useState(false);
+  const [searchKeywordSaved, setSearchKeywordSaved] = useState(false);
 
   useEffect(() => {
     Promise.all([fetchUsers(), fetchGroups()])
@@ -35,7 +39,10 @@ export default function AdminPanel() {
       .finally(() => setLineUsersLoading(false));
 
     fetchSettings()
-      .then((s) => { if (s.drive_enabled !== undefined) setDriveEnabled(s.drive_enabled === 'true'); })
+      .then((s) => {
+        if (s.drive_enabled !== undefined) setDriveEnabled(s.drive_enabled === 'true');
+        if (s.search_keyword) setSearchKeyword(s.search_keyword);
+      })
       .catch(() => {});
   }, []);
 
@@ -49,6 +56,21 @@ export default function AdminPanel() {
       setError('อัปเดต Drive setting ไม่สำเร็จ');
     } finally {
       setDriveToggling(false);
+    }
+  };
+
+  const handleSaveSearchKeyword = async () => {
+    const trimmed = searchKeyword.trim();
+    if (!trimmed) return;
+    setSearchKeywordSaving(true);
+    setSearchKeywordSaved(false);
+    try {
+      await updateSetting('search_keyword', trimmed);
+      setSearchKeywordSaved(true);
+    } catch (err) {
+      setError('อัปเดตคำสั่งค้นหาไม่สำเร็จ');
+    } finally {
+      setSearchKeywordSaving(false);
     }
   };
 
@@ -272,6 +294,30 @@ export default function AdminPanel() {
           >
             {driveToggling ? '...' : driveEnabled ? 'เปิดอยู่' : 'ปิดอยู่'}
           </button>
+        </div>
+
+        <div className="ap-setting-row">
+          <div className="ap-setting-info">
+            <span className="ap-setting-label">คำสั่งค้นหาไฟล์ผ่าน LINE bot</span>
+            <span className="ap-setting-desc">
+              พิมพ์คำนี้ตามด้วยคำค้นหาใน DM หรือในกลุ่ม (เช่น "{searchKeyword} สัญญา") — แก้เป็นคำอะไรก็ได้เอง
+            </span>
+          </div>
+          <div className="ap-form-row" style={{ flex: '0 0 auto' }}>
+            <input
+              className="ap-input"
+              style={{ width: 140 }}
+              value={searchKeyword}
+              onChange={(e) => { setSearchKeyword(e.target.value); setSearchKeywordSaved(false); }}
+            />
+            <button
+              className="ap-btn-primary"
+              onClick={handleSaveSearchKeyword}
+              disabled={searchKeywordSaving || !searchKeyword.trim()}
+            >
+              {searchKeywordSaving ? 'กำลังบันทึก...' : searchKeywordSaved ? 'บันทึกแล้ว ✓' : 'บันทึก'}
+            </button>
+          </div>
         </div>
       </div>
 

@@ -28,6 +28,17 @@ async function isDriveEnabled() {
     return s ? s.value === 'true' : true; // default เปิดอยู่
 }
 
+// คำสั่งค้นหาไฟล์ผ่าน LINE — ตั้งค่าได้เองในหน้า admin panel (ไม่ต้อง hardcode/แก้โค้ด)
+async function getSearchKeyword() {
+    const s = await Setting.findByPk('search_keyword');
+    return (s?.value || 'ค้นหา').trim();
+}
+
+// escape อักขระพิเศษของ regex กันคำที่ตั้งเองมีอักขระที่ regex ตีความผิด
+function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 
 const lineConfig = {
     channelAccessToken: process.env.CHANNEL_ACCESS_TOKEN,
@@ -67,41 +78,52 @@ router.post('/', webhookMiddleware, async (req, res) => {
 });
 
 
-// ─── User DM: ค้นหาไฟล์ใน group ที่ user อยู่ด้วย (เฉพาะ canSearch=true) ────────
-async function handleUserDMSearch(event, userId) {
+// ─── ค้นหาไฟล์ผ่าน LINE — ใช้ได้ทั้งใน DM และในกลุ่ม ─────────────────────────
+// DM: ค้นหาข้ามทุกกลุ่มที่ user เป็นสมาชิก (ต้องมี canSearch หรือเป็น admin ที่ผูก LINE ID)
+// กลุ่ม: ค้นหาเฉพาะไฟล์ในกลุ่มนั้นเท่านั้น (กันข้อมูลข้ามกลุ่มหลุดไปให้คนอื่นเห็นกลางกลุ่ม)
+async function handleSearchCommand(event, userId, groupId, sourceType, keyword) {
     const text = (event.message?.text || '').trim();
     const replyToken = event.replyToken;
-    console.log('[UserDM] search from', userId?.slice(0, 10), ':', JSON.stringify(text));
+    console.log('[Search]', sourceType, 'from', userId?.slice(0, 10), ':', JSON.stringify(text));
 
-    const match = text.match(/^ค้นหา\s+(.+)/u);
+    const pattern = new RegExp(`^${escapeRegex(keyword)}\\s+(.+)`, 'u');
+    const match = text.match(pattern);
     if (!match) {
+        // ในกลุ่ม ไม่ตอบ "วิธีใช้งาน" กันบอทกวนคนอื่นในกลุ่มตอนแค่มีคนพิมพ์คำใกล้เคียง
+        if (sourceType === 'group') return;
         await client.replyMessage(replyToken, {
             type: 'text',
-            text: '🤖 วิธีใช้งาน\n\nพิมพ์: ค้นหา <ชื่อไฟล์>\n\nตัวอย่าง:\n• ค้นหา สัญญา\n• ค้นหา .pdf\n• ค้นหา ใบเสนอราคา\n\nจะแสดงผลสูงสุด 5 รายการล่าสุด'
-        }).catch(e => console.error('[UserDM] replyMessage error:', e.message));
+            text: `🤖 วิธีใช้งาน\n\nพิมพ์: ${keyword} <ชื่อไฟล์>\n\nตัวอย่าง:\n• ${keyword} สัญญา\n• ${keyword} .pdf\n• ${keyword} ใบเสนอราคา\n\nจะแสดงผลสูงสุด 5 รายการล่าสุด`
+        }).catch(e => console.error('[Search] replyMessage error:', e.message));
         return;
     }
 
-    const keyword = match[1].trim();
-    const safeKeyword = keyword.replace(/'/g, "''");
-    console.log('[UserDM] keyword:', keyword);
+    const searchKeyword = match[1].trim();
+    const safeKeyword = searchKeyword.replace(/'/g, "''");
+    console.log('[Search] keyword:', searchKeyword);
 
     try {
         const { literal } = require('sequelize');
 
-        // หา groupId ที่ user นี้เคยส่งข้อความใน group (แสดงว่าเป็นสมาชิก)
-        const userGroups = await Message.findAll({
-            attributes: ['groupId'],
-            where: { userId, sourceType: 'group', groupId: { [Op.not]: null } },
-            group: ['groupId'],
-            raw: true
-        });
-        const groupIds = userGroups.map(m => m.groupId);
+        let groupIds;
+        if (sourceType === 'group' && groupId) {
+            // ในกลุ่ม — ค้นหาเฉพาะไฟล์ของกลุ่มนี้เท่านั้น
+            groupIds = [groupId];
+        } else {
+            // DM — หา groupId ที่ user นี้เคยส่งข้อความใน group (แสดงว่าเป็นสมาชิก)
+            const userGroups = await Message.findAll({
+                attributes: ['groupId'],
+                where: { userId, sourceType: 'group', groupId: { [Op.not]: null } },
+                group: ['groupId'],
+                raw: true
+            });
+            groupIds = userGroups.map(m => m.groupId);
+        }
 
         if (groupIds.length === 0) {
             await client.replyMessage(replyToken, {
                 type: 'text',
-                text: `🔍 ไม่พบไฟล์ที่ชื่อมี "${keyword}"\n\n(ไม่พบกลุ่มที่คุณเป็นสมาชิก)`
+                text: `🔍 ไม่พบไฟล์ที่ชื่อมี "${searchKeyword}"\n\n(ไม่พบกลุ่มที่คุณเป็นสมาชิก)`
             }).catch(() => {});
             return;
         }
@@ -123,12 +145,12 @@ async function handleUserDMSearch(event, userId) {
         if (results.length === 0) {
             await client.replyMessage(replyToken, {
                 type: 'text',
-                text: `🔍 ไม่พบไฟล์ที่ชื่อมี "${keyword}"\n\nลองคำค้นอื่นดูครับ`
+                text: `🔍 ไม่พบไฟล์ที่ชื่อมี "${searchKeyword}"\n\nลองคำค้นอื่นดูครับ`
             }).catch(() => {});
             return;
         }
 
-        let reply = `🔍 ค้นหา: "${keyword}" — พบ ${results.length} รายการ\n\n`;
+        let reply = `🔍 ค้นหา: "${searchKeyword}" — พบ ${results.length} รายการ\n\n`;
         results.forEach((msg, i) => {
             const meta = msg.metadata || {};
             const fileName = meta.fileName || '(ไม่ทราบชื่อ)';
@@ -143,14 +165,14 @@ async function handleUserDMSearch(event, userId) {
             reply += `${i + 1}. ${fileName}\n   📂 ${groupName}  👤 ${sender}\n   📅 ${date}\n   🔗 ${link}\n\n`;
         });
 
-        console.log('[UserDM] replying with', results.length, 'results');
-        await client.replyMessage(replyToken, { type: 'text', text: reply.trim() }).catch(e => console.error('[UserDM] replyMessage error:', e.message));
+        console.log('[Search] replying with', results.length, 'results');
+        await client.replyMessage(replyToken, { type: 'text', text: reply.trim() }).catch(e => console.error('[Search] replyMessage error:', e.message));
     } catch (err) {
-        console.error('[DM Search Error]', err.message);
+        console.error('[Search Error]', err.message);
         await client.replyMessage(replyToken, {
             type: 'text',
             text: '❌ เกิดข้อผิดพลาดในการค้นหา กรุณาลองใหม่'
-        }).catch(e => console.error('[UserDM] replyMessage error:', e.message));
+        }).catch(e => console.error('[Search] replyMessage error:', e.message));
     }
 }
 
@@ -168,26 +190,35 @@ async function handleEvent(event, io) {
     // ให้ถือเป็นแชทปกติเสมอ — เก็บเข้าคลัง + auto-grant สิทธิ์ให้เจ้าของเห็น DM ตัวเอง
     const linkedAdmin = sourceType === 'user' ? await Admin.findOne({ where: { lineUserId: userId } }) : null;
 
-    if (sourceType === 'user' && message.type === 'text') {
-        const isSearchCommand = /^ค้นหา\s+/u.test(message.text || '');
+    if (message.type === 'text') {
+        const searchKeyword = await getSearchKeyword();
+        const isSearchCommand = new RegExp(`^${escapeRegex(searchKeyword)}\\s+`, 'u').test(message.text || '');
 
-        // คำสั่ง "ค้นหา ..." ใช้ได้เสมอถ้าเป็น admin ที่ผูก LINE ID ไว้ (ไม่ต้องพึ่ง canSearch)
-        if (isSearchCommand && linkedAdmin) {
-            await handleUserDMSearch(event, userId);
+        // ในกลุ่ม — ใครก็พิมพ์คำสั่งค้นหาได้ (ค้นหาแค่ไฟล์ในกลุ่มนั้น ไม่ข้ามไปกลุ่มอื่น)
+        if (isSearchCommand && sourceType === 'group') {
+            await handleSearchCommand(event, userId, groupId, sourceType, searchKeyword);
             return;
         }
 
-        // ── User DM (ลูกค้าทั่วไป ไม่ได้ผูกกับ admin คนไหน): ตรวจสิทธิ์ก่อน ถ้า canSearch=true ค้นหาได้ ถ้าไม่มีสิทธิ์ → ignore ─
-        if (!linkedAdmin) {
-            const lineUser = await User.findByPk(userId);
-            if (lineUser?.canSearch) {
-                await handleUserDMSearch(event, userId);
+        if (sourceType === 'user') {
+            // คำสั่งค้นหา ใช้ได้เสมอถ้าเป็น admin ที่ผูก LINE ID ไว้ (ไม่ต้องพึ่ง canSearch)
+            if (isSearchCommand && linkedAdmin) {
+                await handleSearchCommand(event, userId, groupId, sourceType, searchKeyword);
                 return;
             }
-            // ไม่มีสิทธิ์ → ignore เงียบๆ ไม่ตอบกลับ ไม่บันทึก
-            return;
+
+            // ── User DM (ลูกค้าทั่วไป ไม่ได้ผูกกับ admin คนไหน): ตรวจสิทธิ์ก่อน ถ้า canSearch=true ค้นหาได้ ถ้าไม่มีสิทธิ์ → ignore ─
+            if (!linkedAdmin) {
+                const lineUser = await User.findByPk(userId);
+                if (lineUser?.canSearch) {
+                    await handleSearchCommand(event, userId, groupId, sourceType, searchKeyword);
+                    return;
+                }
+                // ไม่มีสิทธิ์ → ignore เงียบๆ ไม่ตอบกลับ ไม่บันทึก
+                return;
+            }
+            // linkedAdmin + ข้อความทั่วไป (ไม่ใช่คำสั่งค้นหา) → ปล่อยผ่านไปบันทึกเป็นแชทปกติด้านล่าง
         }
-        // linkedAdmin + ข้อความทั่วไป (ไม่ใช่คำสั่งค้นหา) → ปล่อยผ่านไปบันทึกเป็นแชทปกติด้านล่าง
     }
 
     // --- GROUP upsert ---
