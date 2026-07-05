@@ -152,11 +152,15 @@ export default function App() {
 
   const handleLogin = (adminData) => {
     setAdmin(adminData);
+    // เหมือน checkAuth() ตอน hard refresh — ต้อง bump refreshKey ด้วย ไม่งั้น useGroups
+    // จะไม่ fetch ใหม่ ทำให้เห็นรายชื่อกลุ่ม/DM ค้างจาก account เดิมก่อนหน้า (ถ้ามี)
+    setRefreshKey((prev) => prev + 1);
   };
 
   const handleLogout = async () => {
     await logout();
     setAdmin(null);
+    setSelectedGroup(null);
   };
 
   const handleSaveLineId = async () => {

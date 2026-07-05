@@ -164,8 +164,13 @@ async function handleEvent(event, io) {
     const userId = source.userId;
     const groupId = source.groupId || null;
 
-    // ── User DM: ตรวจสิทธิ์ก่อน ถ้า canSearch=true ค้นหาได้ ถ้าไม่มีสิทธิ์ → ignore ─
-    if (sourceType === 'user' && message.type === 'text') {
+    // DM จาก LINE account ที่ผูกกับ admin คนไหนไว้ (เมนู "ตั้งค่าบัญชี" ผูก LINE ID)
+    // ให้ถือเป็นแชทปกติเสมอ — เก็บเข้าคลัง + auto-grant สิทธิ์ให้เจ้าของเห็น DM ตัวเอง
+    // ไม่เข้าเงื่อนไข "ค้นหา"/ignore ด้านล่าง เพราะนั่นมีไว้สำหรับลูกค้าทั่วไปที่ไม่ได้ผูกบัญชีเท่านั้น
+    const linkedAdmin = sourceType === 'user' ? await Admin.findOne({ where: { lineUserId: userId } }) : null;
+
+    // ── User DM (ลูกค้าทั่วไป ไม่ได้ผูกกับ admin คนไหน): ตรวจสิทธิ์ก่อน ถ้า canSearch=true ค้นหาได้ ถ้าไม่มีสิทธิ์ → ignore ─
+    if (!linkedAdmin && sourceType === 'user' && message.type === 'text') {
         const lineUser = await User.findByPk(userId);
         if (lineUser?.canSearch) {
             await handleUserDMSearch(event, userId);
