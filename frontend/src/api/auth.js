@@ -19,8 +19,9 @@ export async function login(username, password) {
     }
     return res.data
   } catch (error) {
-    console.error('Login error:', error)
-    throw new Error(error.response?.data?.error || 'Login failed')
+    const serverMsg = error.response?.data?.details || error.response?.data?.error
+    console.error('Login error:', serverMsg || error.message, error.response?.data)
+    throw new Error(serverMsg || error.message || 'Login failed')
   }
 }
 

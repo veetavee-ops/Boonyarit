@@ -28,7 +28,7 @@ app.locals.io = io;
 setupSockets(io);
 
 // ===== DB Sync & Start =====
-const syncOptions = process.env.NODE_ENV === 'production' ? {} : { alter: true };
+const syncOptions = {};
 sequelize.sync(syncOptions)
   .then(() => {
     console.log('Database synchronized');

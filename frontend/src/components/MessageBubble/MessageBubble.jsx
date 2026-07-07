@@ -690,7 +690,6 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
                 (() => {
                   const paths =
                     msg.metadata?.gcsPaths || msg.metadata?.localPaths || [];
-                  const storedUrls = msg.metadata?.gcsUrls || [];
                   if (paths.length === 0) return null;
                   return (
                     <div
@@ -698,7 +697,7 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
                       data-count={Math.min(paths.length, 3)}
                     >
                       {paths.map((p, i) => {
-                        const url = storedUrls[i] || mediaUrl(p);
+                        const url = mediaUrl(p);
                         return (
                           <img
                             key={i}
@@ -721,8 +720,7 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
               {/* ── VIDEO ── */}
               {msg.messageType === "video" &&
                 (() => {
-                  const url = msg.metadata?.gcsUrl ||
-                    mediaUrl(msg.metadata?.gcsPath || msg.metadata?.localPath);
+                  const url = mediaUrl(msg.metadata?.gcsPath || msg.metadata?.localPath);
                   const name = msg.metadata?.fileName || "video.mp4";
                   if (url) {
                     return (
@@ -760,8 +758,7 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
               {/* ── AUDIO ── */}
               {msg.messageType === "audio" &&
                 (() => {
-                  const url = msg.metadata?.gcsUrl ||
-                    mediaUrl(msg.metadata?.gcsPath || msg.metadata?.localPath);
+                  const url = mediaUrl(msg.metadata?.gcsPath || msg.metadata?.localPath);
                   return (
                     <VoiceMessage url={url} duration={msg.metadata?.duration} />
                   );
@@ -771,8 +768,7 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
               {/* ── FILE ── */}
               {msg.messageType === "file" &&
                 (() => {
-                  const url = msg.metadata?.gcsUrl ||
-                    mediaUrl(msg.metadata?.gcsPath || msg.metadata?.localPath);
+                  const url = mediaUrl(msg.metadata?.gcsPath || msg.metadata?.localPath);
                   const fileName = msg.metadata?.fileName || "ไฟล์แนบ";
                   const accentColor = getFileAccent(fileName);
                   if (url) {

@@ -5,7 +5,7 @@ const { Op } = require('sequelize');
 
 const { Message, User, Group, Setting } = require('../models/index');
 const { getProfile, client } = require('../services/lineService');
-const { uploadToGCS, buildGCSPath, getSignedUrlLong } = require('../services/gcsService');
+const { uploadToGCS, buildGCSPath } = require('../services/gcsService');
 
 const { ensureGroupFolder, uploadFileToDrive } = require('../services/driveService');
 const { alertError } = require('../services/notifyService');
@@ -124,8 +124,12 @@ async function handleUserDMSearch(event, userId) {
             const date = new Date(msg.timestamp).toLocaleDateString('th-TH', {
                 day: 'numeric', month: 'short', year: 'numeric'
             });
-            const link = meta.gcsUrl
-                || (meta.driveFileId ? `https://drive.google.com/file/d/${meta.driveFileId}/view` : '(ไม่มีลิงก์)');
+            const baseUrl = process.env.BASE_URL || 'https://boonyarit.achalee.com';
+            const link = meta.driveFileId
+                ? `https://drive.google.com/file/d/${meta.driveFileId}/view`
+                : meta.gcsPath
+                    ? `${baseUrl}/api/media?path=${encodeURIComponent(meta.gcsPath)}`
+                    : '(ไม่มีลิงก์)';
 
             reply += `${i + 1}. ${fileName}\n   📂 ${groupName}  👤 ${sender}\n   📅 ${date}\n   🔗 ${link}\n\n`;
         });
@@ -262,7 +266,6 @@ async function saveImageGroup(groupKey, io) {
     if (!pending) return;
     try {
         const gcsPaths = [];
-        const gcsUrls = [];
         const driveFileIds = [];
 
         // Drive folder (ถ้าเปิดใช้งาน)
@@ -277,8 +280,6 @@ async function saveImageGroup(groupKey, io) {
                 const gcsPath = buildGCSPath(img.lineMessageId, '.jpg', 'image');
                 await uploadToGCS(img.buffer, gcsPath, '.jpg');
                 gcsPaths.push(gcsPath);
-                const { url } = await getSignedUrlLong(gcsPath);
-                gcsUrls.push(url);
             } catch (e) {
                 console.error('❌ Image GCS fail:', e.message);
                 alertError('GCS Image', e.message);
@@ -300,7 +301,7 @@ async function saveImageGroup(groupKey, io) {
             {
                 metadata: {
                     imageCount: gcsPaths.length,
-                    gcsPaths, gcsUrls, gcsUrlExpires: '2099-12-31T23:59:59Z',
+                    gcsPaths,
                     ...(driveFileIds.length > 0 && { driveFileIds })
                 }
             },
@@ -379,9 +380,8 @@ async function handleNonImageMessage(event, userId, groupId, sourceType, message
                 const buffer = await downloadAsBuffer(message.id);
                 const gcsPath = buildGCSPath(message.id, '.mp4', 'video');
                 await uploadToGCS(buffer, gcsPath, '.mp4');
-                const { url: gcsUrl } = await getSignedUrlLong(gcsPath);
                 dbPayload.metadata = {
-                    gcsPath, gcsUrl, gcsUrlExpires: '2099-12-31T23:59:59Z',
+                    gcsPath,
                     duration: message.duration,
                     fileSize: buffer.length
                 };
@@ -398,9 +398,8 @@ async function handleNonImageMessage(event, userId, groupId, sourceType, message
                 const buffer = await downloadAsBuffer(message.id);
                 const gcsPath = buildGCSPath(message.id, '.m4a', 'audio');
                 await uploadToGCS(buffer, gcsPath, '.m4a');
-                const { url: gcsUrl } = await getSignedUrlLong(gcsPath);
                 dbPayload.metadata = {
-                    gcsPath, gcsUrl, gcsUrlExpires: '2099-12-31T23:59:59Z',
+                    gcsPath,
                     duration: message.duration,
                     fileSize: buffer.length
                 };
@@ -423,15 +422,13 @@ async function handleNonImageMessage(event, userId, groupId, sourceType, message
             }
 
             const ext = '.' + (message.fileName.split('.').pop() || 'bin');
-            let gcsPath = null, gcsUrl = null;
+            let gcsPath = null;
             let driveFileId = null;
 
             // GCS upload (ล้มเหลวได้ โดยไม่กระทบ Drive)
             try {
                 gcsPath = buildGCSPath(message.id, ext, 'file');
                 await uploadToGCS(buffer, gcsPath, ext);
-                const signed = await getSignedUrlLong(gcsPath);
-                gcsUrl = signed.url;
             } catch (e) {
                 console.error('❌ File GCS fail:', e.message);
                 alertError('GCS File', e.message);
@@ -451,7 +448,7 @@ async function handleNonImageMessage(event, userId, groupId, sourceType, message
             }
 
             dbPayload.metadata = {
-                ...(gcsPath && { gcsPath, gcsUrl, gcsUrlExpires: '2099-12-31T23:59:59Z' }),
+                ...(gcsPath && { gcsPath }),
                 fileName: message.fileName,
                 fileSize: message.fileSize ?? buffer.length,
                 ...(driveFileId && { driveFileId })

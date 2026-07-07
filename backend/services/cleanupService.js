@@ -1,10 +1,9 @@
 /**
  * cleanupService.js
- * Nightly cron: delete messages with expired GCS URLs + old local media files.
+ * Nightly cron: delete old local media files + cleanup inactive users.
  */
 const fs = require('fs');
 const path = require('path');
-const { Op } = require('sequelize');
 
 const MEDIA_DIRS = [
     path.join(__dirname, '..', 'media', 'images'),
@@ -37,40 +36,6 @@ function cleanupOldFiles() {
     }
 
     if (deleted > 0) console.log(`[Cleanup] Deleted ${deleted} local files older than 90 days`);
-}
-
-/**
- * ลบ messages ที่ gcsUrlExpires หมดอายุแล้ว
- * (ด้วย expiry 2099 จะไม่ trigger จนกว่าจะเปลี่ยน service account)
- */
-async function cleanupExpiredMessages() {
-    try {
-        const { Message } = require('../models/index');
-        const { deleteFromGCS } = require('./gcsService');
-
-        const expired = await Message.findAll({
-            where: {
-                [Op.and]: [
-                    { 'metadata.gcsUrlExpires': { [Op.ne]: null } },
-                    { 'metadata.gcsUrlExpires': { [Op.lt]: new Date().toISOString() } },
-                ]
-            }
-        });
-
-        if (expired.length === 0) return;
-
-        for (const msg of expired) {
-            const paths = msg.metadata?.gcsPaths || (msg.metadata?.gcsPath ? [msg.metadata.gcsPath] : []);
-            for (const p of paths) {
-                await deleteFromGCS(p).catch(() => {});
-            }
-            await msg.destroy();
-        }
-
-        console.log(`[Cleanup] Deleted ${expired.length} messages with expired GCS URLs`);
-    } catch (e) {
-        console.error('[Cleanup] Error cleaning expired messages:', e.message);
-    }
 }
 
 /**
@@ -146,7 +111,6 @@ async function cleanupInactiveUsers() {
  */
 function startCleanupCron() {
     cleanupOldFiles();
-    cleanupExpiredMessages();
     cleanupInactiveUsers();
 
     const now = new Date();
@@ -158,11 +122,9 @@ function startCleanupCron() {
 
     setTimeout(() => {
         cleanupOldFiles();
-        cleanupExpiredMessages();
         cleanupInactiveUsers();
         setInterval(() => {
             cleanupOldFiles();
-            cleanupExpiredMessages();
             cleanupInactiveUsers();
         }, 24 * 60 * 60 * 1000);
     }, msUntilNext2AM);
