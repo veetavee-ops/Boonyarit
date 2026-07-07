@@ -324,3 +324,18 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
 
 > `sequelize.sync({ alter: true })` ใน dev → ALTER TABLE ทุก table ทุก restart → ช้า 5-10+ วินาที → login fail เพราะ race condition กับ browser auto-open (3 วินาที)
 > **กฎ**: ใช้ `syncOptions = {}` เสมอ ถ้าต้องแก้ schema → รัน SQL migration เองแล้วแก้ model ให้ตรงกัน
+
+### 🔑 Bash tool ของ Claude รันคนละ terminal กับที่ user เห็น
+
+> Claude Code รันคำสั่งผ่าน Bash tool ใน shell session ของตัวเอง **ไม่ใช่** terminal
+> เดียวกับที่ user เปิดอยู่ใน VS Code (backend/frontend/ngrok จาก `start.ps1`) —
+> เป็นคนละ process กันเลย ต่อให้ Claude สั่ง `npm run dev` เอง user ก็จะไม่เห็นเลย
+> จนกว่าจะมีปัญหาโผล่มา (เช่น port ชน EADDRINUSE ตอน Claude เผลอรัน backend
+> เองซ้อนกับ nodemon ที่ user รันอยู่แล้ว)
+>
+> **ห้าม** รัน dev server (`npm run dev`, nodemon, vite) เองแบบ background ซ้อนกับ
+> ของ user ที่รันอยู่แล้ว — ให้บอกคำสั่งเป็นข้อความแทน แล้วให้ user ไปรันเองใน
+> terminal ที่เห็น จะได้เห็นตรงกันและไม่ชน port กัน
+>
+> ข้อยกเว้น: ใช้ Bash รัน dev server เองได้เฉพาะตอนต้องทดสอบ backend ชั่วคราว
+> ผ่าน curl (เช่น debug API ตรงๆ) และต้อง**ปิดทิ้งทันที**หลังทดสอบเสร็จ ไม่ปล่อยค้าง

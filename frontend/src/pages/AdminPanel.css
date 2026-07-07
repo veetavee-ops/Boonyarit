@@ -10,7 +10,7 @@
   align-items: center;
   gap: 16px;
   padding: 16px 24px;
-  background: #111827;
+  background: var(--bg-sidebar);
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -36,10 +36,10 @@
 .ap-error {
   margin: 12px 24px;
   padding: 10px 14px;
-  background: rgba(239,68,68,0.1);
+  background: rgba(220,38,38,0.08);
   border: 1px solid rgba(239,68,68,0.3);
   border-radius: 8px;
-  color: #f87171;
+  color: #b91c1c;
   font-size: 13px;
 }
 
@@ -104,7 +104,7 @@
   transition: background 0.15s;
   white-space: nowrap;
 }
-.ap-btn-primary:hover { background: #05a846; }
+.ap-btn-primary:hover { background: var(--primary-hover); }
 
 .ap-columns {
   display: grid;
@@ -128,8 +128,8 @@
   border: 1px solid transparent;
   transition: all 0.15s;
 }
-.ap-user-item:hover { background: rgba(255,255,255,0.04); }
-.ap-user-item--active { background: rgba(6,199,85,0.08); border-color: rgba(6,199,85,0.3); }
+.ap-user-item:hover { background: rgba(58,47,38,0.05); }
+.ap-user-item--active { background: rgba(249,115,22,0.08); border-color: rgba(249,115,22,0.3); }
 
 .ap-user-info { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
 .ap-username { font-size: 13px; font-weight: 600; color: var(--text-primary); }
@@ -143,15 +143,15 @@
   letter-spacing: 0.3px;
   flex-shrink: 0;
 }
-.ap-role-badge--admin { background: rgba(139,92,246,0.2); color: #a78bfa; }
-.ap-role-badge--user { background: rgba(6,199,85,0.15); color: var(--primary-color); }
+.ap-role-badge--admin { background: rgba(139,92,246,0.2); color: #6d28d9; }
+.ap-role-badge--user { background: rgba(249,115,22,0.15); color: var(--primary-color); }
 
 .ap-group-count { font-size: 12px; color: var(--text-tertiary); flex-shrink: 0; }
 
 .ap-btn-delete {
   padding: 4px 10px;
-  background: rgba(239,68,68,0.1);
-  color: #f87171;
+  background: rgba(220,38,38,0.08);
+  color: #b91c1c;
   border: 1px solid rgba(239,68,68,0.2);
   border-radius: 6px;
   font-family: 'Kanit', sans-serif;
@@ -177,7 +177,7 @@
   border-radius: 6px;
   transition: background 0.1s;
 }
-.ap-group-label:hover { background: rgba(255,255,255,0.04); color: var(--text-primary); }
+.ap-group-label:hover { background: rgba(58,47,38,0.05); color: var(--text-primary); }
 .ap-group-label input[type="checkbox"] { accent-color: var(--primary-color); width: 15px; height: 15px; cursor: pointer; }
 .ap-group-label input:disabled { opacity: 0.4; cursor: not-allowed; }
 
@@ -221,10 +221,10 @@
   white-space: nowrap; font-family: 'Kanit', sans-serif;
 }
 .ap-toggle--on {
-  background: rgba(6,199,85,0.15); border-color: rgba(6,199,85,0.5);
+  background: rgba(249,115,22,0.15); border-color: rgba(249,115,22,0.5);
   color: var(--primary-color);
 }
-.ap-toggle:hover { border-color: rgba(6,199,85,0.4); }
+.ap-toggle:hover { border-color: rgba(249,115,22,0.4); }
 
 /* ── Inactive Days Badge ────────────────────────────────────── */
 .ap-inactive-badge {
@@ -233,6 +233,6 @@
 }
 .ap-inactive-badge--none    { color: var(--text-tertiary); }
 .ap-inactive-badge--safe    { color: var(--text-tertiary); }
-.ap-inactive-badge--caution { color: #f59e0b; }
-.ap-inactive-badge--warn    { color: #ef4444; }
-.ap-inactive-badge--danger  { color: #ef4444; font-weight: 700; }
+.ap-inactive-badge--caution { color: #b45309; }
+.ap-inactive-badge--warn    { color: #b91c1c; }
+.ap-inactive-badge--danger  { color: #b91c1c; font-weight: 700; }

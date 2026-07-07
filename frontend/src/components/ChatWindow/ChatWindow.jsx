@@ -18,6 +18,18 @@ function relativeTime(dateStr) {
   return new Date(dateStr).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: '2-digit' });
 }
 
+// ตัวเลือก "load ย้อนหลังกี่วัน" — null = โหลดทั้งหมด (ไม่จำกัด)
+const DAYS_BACK_OPTIONS = [
+  { value: '', label: 'ทั้งหมด' },
+  { value: '1', label: '1 วัน' },
+  { value: '3', label: '3 วัน' },
+  { value: '7', label: '7 วัน' },
+  { value: '14', label: '14 วัน' },
+  { value: '30', label: '30 วัน' },
+  { value: '60', label: '60 วัน' },
+  { value: '90', label: '90 วัน' },
+];
+
 function highlightText(text, q) {
   if (!q || !text) return text;
   const idx = text.toLowerCase().indexOf(q.toLowerCase());
@@ -48,6 +60,10 @@ export default function ChatWindow({
   searching,
   onSelectGroup,
   onToggleImportant,
+  myLineUserId,
+  daysBack,
+  onDaysBackChange,
+  onDeleteMessages,
 }) {
   const messagesEndRef = useRef(null)
   const containerRef = useRef(null)
@@ -56,6 +72,39 @@ export default function ChatWindow({
   const [showImportant, setShowImportant] = useState(false)
   const [importantMessages, setImportantMessages] = useState([])
   const [importantLoading, setImportantLoading] = useState(false)
+
+  // ── โหมดเลือกข้อความ (ลบเดี่ยว/ลบกลุ่ม) ──
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState(new Set())
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
+  const toggleSelectMode = () => {
+    setSelectMode((v) => !v)
+    setSelectedIds(new Set())
+  }
+
+  const toggleSelectMessage = (id) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const handleConfirmDelete = async () => {
+    setDeleting(true)
+    try {
+      await onDeleteMessages?.([...selectedIds])
+      setSelectedIds(new Set())
+      setConfirmDeleteOpen(false)
+      setSelectMode(false)
+    } catch (e) {
+      alert('ลบไม่สำเร็จ: ' + e.message)
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const prevGroupRef = useRef(currentGroup?.groupId)
 
@@ -109,6 +158,8 @@ export default function ChatWindow({
   useEffect(() => {
     setShowGallery(false)
     setShowImportant(false)
+    setSelectMode(false)
+    setSelectedIds(new Set())
   }, [currentGroup])
 
   useEffect(() => {
@@ -157,22 +208,30 @@ export default function ChatWindow({
       {/* ── Header ─────────────────────────────────────────── */}
       <header className="header">
         <div className="header-left">
-          <div
-            className={`group-avatar-lg${currentGroup?.isPrivate ? ' group-avatar-lg--private' : ''}`}
-            style={{ background: currentGroup ? getColor(currentGroup.groupName) : '#dde3ea' }}
-          >
-            {currentGroup?.isPrivate ? (
-              <svg viewBox="0 0 24 24" fill="white" width="18" height="18">
-                <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
-              </svg>
-            ) : (
-              currentGroup ? getInitials(currentGroup.groupName) : (
-                <svg viewBox="0 0 24 24" fill="rgba(0,0,0,0.2)" width="20" height="20">
-                  <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
+          {currentGroup?.pictureUrl ? (
+            <img
+              className={`group-avatar-lg group-avatar-lg--img${currentGroup.isPrivate ? ' group-avatar-lg--private' : ''}`}
+              src={currentGroup.pictureUrl}
+              alt={currentGroup.groupName}
+            />
+          ) : (
+            <div
+              className={`group-avatar-lg${currentGroup?.isPrivate ? ' group-avatar-lg--private' : ''}`}
+              style={{ background: currentGroup ? getColor(currentGroup.groupName) : '#dde3ea' }}
+            >
+              {currentGroup?.isPrivate ? (
+                <svg viewBox="0 0 24 24" fill="white" width="18" height="18">
+                  <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
                 </svg>
-              )
-            )}
-          </div>
+              ) : (
+                currentGroup ? getInitials(currentGroup.groupName) : (
+                  <svg viewBox="0 0 24 24" fill="rgba(0,0,0,0.2)" width="20" height="20">
+                    <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
+                  </svg>
+                )
+              )}
+            </div>
+          )}
           <div className="header-group-info">
             <h1 className="group-title">
               {currentGroup?.groupName || 'เลือกแชท / กลุ่ม'}
@@ -186,6 +245,27 @@ export default function ChatWindow({
         <div className="header-right">
           {currentGroup && (
             <>
+              <select
+                className="days-back-select"
+                value={daysBack ?? ''}
+                onChange={(e) => onDaysBackChange?.(e.target.value || null)}
+                title="โหลดข้อความย้อนหลังกี่วัน"
+              >
+                {DAYS_BACK_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+              <button
+                className={`btn-media-gallery${selectMode ? ' active' : ''}`}
+                onClick={toggleSelectMode}
+                title="เลือกข้อความเพื่อลบ"
+              >
+                <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M9 11l3 3L22 4" />
+                  <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                </svg>
+                <span className="btn-media-label">เลือก</span>
+              </button>
               <button
                 className={`btn-media-gallery${showImportant ? ' active' : ''}`}
                 onClick={handleToggleImportantFilter}
@@ -223,6 +303,23 @@ export default function ChatWindow({
         </div>
       </header>
 
+      {/* ── แถบตอนกำลังเลือกข้อความ (select mode) ───────────── */}
+      {selectMode && (
+        <div className="select-mode-bar">
+          <span className="select-mode-count">เลือกแล้ว {selectedIds.size} ข้อความ</span>
+          <div className="select-mode-actions">
+            <button className="btn-cancel" onClick={toggleSelectMode}>ยกเลิก</button>
+            <button
+              className="btn-confirm-delete"
+              disabled={selectedIds.size === 0}
+              onClick={() => setConfirmDeleteOpen(true)}
+            >
+              ลบ ({selectedIds.size})
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Main content area ──────────────────────────────── */}
       <div className="chat-body">
         {showImportant ? (
@@ -246,6 +343,7 @@ export default function ChatWindow({
                   prevMsg={importantMessages[i - 1]}
                   allMessages={importantMessages}
                   onToggleImportant={handleToggleImportant}
+                  myLineUserId={myLineUserId}
                 />
               ))
             )}
@@ -341,6 +439,10 @@ export default function ChatWindow({
                   prevMsg={filtered[i - 1]}
                   allMessages={messages}
                   onToggleImportant={handleToggleImportant}
+                  myLineUserId={myLineUserId}
+                  selectMode={selectMode}
+                  selected={selectedIds.has(msg.id)}
+                  onToggleSelect={() => toggleSelectMessage(msg.id)}
                 />
               </div>
             )
@@ -380,6 +482,26 @@ export default function ChatWindow({
             {stats.users} คน
           </div>
         </footer>
+      )}
+
+      {/* ── Confirm Delete Modal ─────────────────────────────── */}
+      {confirmDeleteOpen && (
+        <div className="drive-overlay" onClick={() => !deleting && setConfirmDeleteOpen(false)}>
+          <div className="drive-confirm" onClick={(e) => e.stopPropagation()}>
+            <div className="drive-confirm-icon">🗑️</div>
+            <h3>ยืนยันการลบ</h3>
+            <p>ลบ <strong>{selectedIds.size} ข้อความ</strong> ออกจากระบบถาวร?</p>
+            <p className="drive-confirm-warn">ไม่สามารถกู้คืนได้ (รวมไฟล์แนบใน Drive/GCS)</p>
+            <div className="drive-confirm-actions">
+              <button className="btn-cancel" autoFocus onClick={() => setConfirmDeleteOpen(false)} disabled={deleting}>
+                ยกเลิก
+              </button>
+              <button className="btn-confirm-delete" onClick={handleConfirmDelete} disabled={deleting}>
+                {deleting ? 'กำลังลบ...' : 'ลบเลย'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   )

@@ -62,19 +62,33 @@ export async function fetchAvailableDates(rangeValue = 7, rangeUnit = 'day') {
 
 /**
  * Fetch messages for a specific group with optional pagination
+ * sinceDays: จำกัดให้โหลดแค่ N วันย้อนหลัง (ไม่ใส่ = โหลดทั้งหมดแบบเดิม)
  */
-export async function fetchMessages({ groupId, limit, before } = {}) {
+export async function fetchMessages({ groupId, limit, before, sinceDays } = {}) {
   try {
     const params = {}
     if (groupId) params.groupId = groupId
     if (limit) params.limit = limit
     if (before) params.before = before
+    if (sinceDays) params.sinceDays = sinceDays
 
     const res = await axiosInstance.get('/api/messages', { params })
     return res.data
   } catch (error) {
     console.error('Error fetching messages:', error)
     throw new Error(error.response?.data?.error || 'Failed to fetch messages')
+  }
+}
+
+/**
+ * ลบข้อความถาวร — ส่งได้ทั้งอันเดียว (array 1 ตัว) หรือหลายอันพร้อมกัน
+ */
+export async function deleteMessages(messageIds) {
+  try {
+    const res = await axiosInstance.delete('/api/messages', { data: { messageIds } })
+    return res.data
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'ลบข้อความไม่สำเร็จ')
   }
 }
 

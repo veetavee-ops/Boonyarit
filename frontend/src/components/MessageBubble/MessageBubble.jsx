@@ -468,7 +468,7 @@ function MediaModal({ media, onClose }) {
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImportant }) {
+export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImportant, myLineUserId, selectMode, selected, onToggleSelect }) {
   const [lightboxImg, setLightboxImg] = useState(null);
   const [mediaModal, setMediaModal] = useState(null);
   const [linkUrl, setLinkUrl] = useState(null);
@@ -527,6 +527,7 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
   const prevUser = prevMsg ? getUserInfo(prevMsg) : null;
   const isNewSender = !prevMsg || prevUser.userId !== currentUser.userId;
   const userColor = getColor(currentUser.displayName);
+  const isOwn = !!myLineUserId && currentUser.userId === myLineUserId;
 
   const quotedMessageId = msg.metadata?.quotedMessageId;
   const quotedMessage =
@@ -552,9 +553,19 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
   return (
     <>
       <div
-        className={`msg ${isNewSender ? "new" : ""} ${isTimeBreak ? "time-gap" : ""} ${msg.isImportant ? "msg--important" : ""}`}
+        className={`msg ${isNewSender ? "new" : ""} ${isTimeBreak ? "time-gap" : ""} ${msg.isImportant ? "msg--important" : ""} ${isOwn ? "msg--own" : ""} ${selectMode ? "msg--select-mode" : ""} ${selected ? "msg--selected" : ""}`}
         data-id={msg.id}
       >
+        {/* Checkbox เลือกข้อความ — แสดงเฉพาะตอนอยู่ในโหมดเลือก */}
+        {selectMode && (
+          <input
+            type="checkbox"
+            className="msg-select-checkbox"
+            checked={!!selected}
+            onChange={onToggleSelect}
+          />
+        )}
+
         {/* Avatar */}
         <div className="msg-avatar">
           {isNewSender && (

@@ -1,17 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { format } from "date-fns";
-import { checkAuth, logout } from "./api/auth";
+import { checkAuth, logout, updateProfile } from "./api/auth";
 import { useGroups, useMessages } from "./hooks/useMessages";
 import { useSocket } from "./hooks/useSocket";
-import { summarizeDay, searchMessages, toggleImportant } from "./api/messages";
+import { summarizeDay, searchMessages, toggleImportant, deleteMessages } from "./api/messages";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
+import ForgotPasswordPage from "./pages/ForgotPasswordPage";
+import ResetPasswordPage from "./pages/ResetPasswordPage";
 import DriveFilesPage from "./pages/DriveFilesPage";
 import DashboardPage from "./pages/DashboardPage";
 import AdminPanel from "./pages/AdminPanel";
 import Sidebar from "./components/Sidebar/Sidebar";
+import SummarySidebar from "./components/SummarySidebar/SummarySidebar";
 import ChatWindow from "./components/ChatWindow/ChatWindow";
 import SummaryModal from "./components/SummaryModal/SummaryModal";
+import ChangePasswordModal from "./components/ChangePasswordModal/ChangePasswordModal";
 import "./App.css";
 
 export default function App() {
@@ -39,8 +43,19 @@ export default function App() {
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSummarySidebarOpen, setIsSummarySidebarOpen] = useState(false);
+  const [showLogoModal, setShowLogoModal] = useState(false);
+  // ปักหมุด sidebar ไว้ → ต้องบีบพื้นที่แชทให้แคบลงเท่ากับความกว้าง sidebar
+  // ไม่งั้น sidebar จะลอยทับบังข้อความฝั่งซ้ายของแชท
+  const [pinnedSidebarWidth, setPinnedSidebarWidth] = useState(0);
+  const [pinnedSummarySidebarWidth, setPinnedSummarySidebarWidth] = useState(0);
+  const [showLineIdInput, setShowLineIdInput] = useState(false);
+  const [lineIdDraft, setLineIdDraft] = useState('');
+  const [showChangePassword, setShowChangePassword] = useState(false); // true = กำลังเปิด modal เปลี่ยนรหัสผ่านอยู่
   const [showDashboard, setShowDashboard] = useState(false);
   const [aiProvider, setAiProvider] = useState('groq');
+  // "load กี่วันย้อนหลัง" ของแชทที่เปิดอยู่ — null = โหลดทั้งหมด (ไม่จำกัดวัน) เหมือนเดิม
+  const [daysBack, setDaysBack] = useState(null);
 
   const { groups, loading: groupsLoading } = useGroups(refreshKey);
   const {
@@ -51,7 +66,8 @@ export default function App() {
     loadMore,
     addMessage,
     updateMessage,
-  } = useMessages(selectedGroup);
+    removeMessages,
+  } = useMessages(selectedGroup, daysBack);
 
   const handleNewMessage = useCallback(
     (newMessage) => {
@@ -70,7 +86,19 @@ export default function App() {
     [addMessage, selectedGroup],
   );
 
-  useSocket(selectedGroup, handleNewMessage);
+  // คนอื่น (หรือแท็บอื่น) ลบข้อความไป — เอาออกจาก state ทันทีถ้ากำลังดูอยู่
+  const handleMessagesDeleted = useCallback(
+    ({ messageIds }) => removeMessages(messageIds),
+    [removeMessages],
+  );
+
+  useSocket(selectedGroup, handleNewMessage, handleMessagesDeleted);
+
+  // ลบข้อความถาวร (เดี่ยวหรือหลายอัน) — เรียกจาก ChatWindow ตอนกดยืนยันลบ
+  const handleDeleteMessages = async (messageIds) => {
+    await deleteMessages(messageIds);
+    removeMessages(messageIds);
+  };
 
   useEffect(() => {
     clearTimeout(searchDebounceRef.current);
@@ -113,13 +141,36 @@ export default function App() {
     return <RegisterPage />;
   }
 
+  // หน้า "ลืมรหัสผ่าน" และ "ตั้งรหัสผ่านใหม่" ต้องเข้าได้แม้ยังไม่ได้ล็อกอิน (เพราะ user ลืมรหัสผ่าน = ล็อกอินไม่ได้อยู่แล้ว)
+  // เลยเช็ค pathname ตรงนี้ ก่อนจะถึงจุดที่เช็คว่า login อยู่ไหม (เหมือนกับ /register-admin ด้านบน)
+  if (window.location.pathname === "/forgot-password") {
+    return <ForgotPasswordPage onBack={() => { window.location.href = "/"; }} />;
+  }
+  if (window.location.pathname === "/reset-password") {
+    return <ResetPasswordPage />;
+  }
+
   const handleLogin = (adminData) => {
     setAdmin(adminData);
+    // เหมือน checkAuth() ตอน hard refresh — ต้อง bump refreshKey ด้วย ไม่งั้น useGroups
+    // จะไม่ fetch ใหม่ ทำให้เห็นรายชื่อกลุ่ม/DM ค้างจาก account เดิมก่อนหน้า (ถ้ามี)
+    setRefreshKey((prev) => prev + 1);
   };
 
   const handleLogout = async () => {
     await logout();
     setAdmin(null);
+    setSelectedGroup(null);
+  };
+
+  const handleSaveLineId = async () => {
+    try {
+      await updateProfile({ lineUserId: lineIdDraft.trim() || null });
+      setAdmin((prev) => ({ ...prev, lineUserId: lineIdDraft.trim() || null }));
+      setShowLineIdInput(false);
+    } catch (e) {
+      console.error('Failed to update LINE ID:', e);
+    }
   };
 
   const toggleSidebar = () => {
@@ -128,6 +179,14 @@ export default function App() {
 
   const closeSidebar = () => {
     setIsSidebarOpen(false);
+  };
+
+  const toggleSummarySidebar = () => {
+    setIsSummarySidebarOpen((prev) => !prev);
+  };
+
+  const closeSummarySidebar = () => {
+    setIsSummarySidebarOpen(false);
   };
 
   if (authLoading) {
@@ -212,6 +271,16 @@ export default function App() {
       <div className="app-header">
         <div className="header-left-controls">
           <button
+            className="menu-btn"
+            onClick={toggleSidebar}
+            aria-label="กลุ่มแชท"
+            title="กลุ่มแชท"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="19" height="19">
+              <path d="M3 17v2h6v-2H3zM3 5v2h10V5H3zm10 16v-2h8v-2h-8v-2h-2v6h2zM7 9v2H3v2h4v2h2V9H7zm14 4v-2H11v2h10zm-6-4h2V7h4V5h-4V3h-2v6z" />
+            </svg>
+          </button>
+          <button
             className={`btn-header-icon${showDashboard ? ' active' : ''}`}
             onClick={() => setShowDashboard((v) => !v)}
             title="ภาพรวม"
@@ -222,12 +291,22 @@ export default function App() {
           </button>
         </div>
         <div className="header-brand">
+          <img
+            className="header-brand-photo"
+            src="/favicon.png"
+            alt="Boonyarit"
+            width="24"
+            height="24"
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowLogoModal(true)}
+          />
           <span className="header-brand-icon">
             <svg viewBox="0 0 24 24" fill="white" width="18" height="18">
               <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
             </svg>
           </span>
-          <span className="header-brand-name">Boonyarit LINE OA</span>
+          <span className="header-brand-name">Boonyarit</span>
         </div>
         <div className="user-info">
           {admin.role === 'superuser' && (
@@ -246,25 +325,43 @@ export default function App() {
             </svg>
             <span>{admin.username}</span>
           </div>
+          {/* ปุ่มเปิด sidebar ขวา — ตั้งค่าการสรุป AI (ย้ายมาจาก sidebar ซ้ายเดิม) */}
+          <button
+            className="btn-header-icon"
+            onClick={toggleSummarySidebar}
+            aria-label="ตั้งค่าการสรุป AI"
+            title="ตั้งค่าการสรุป AI"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14.5v-9l6 4.5-6 4.5z" />
+            </svg>
+          </button>
+          {/* ปุ่มเปิด modal ตั้งค่าบัญชี (อีเมลกู้คืนรหัสผ่าน + เปลี่ยนรหัสผ่าน) — แค่เซ็ต state เป็น true ตัว modal ก็จะโผล่มาเอง (ดูด้านล่างสุดของ JSX) */}
+          <button
+            className="btn-header-icon"
+            onClick={() => setShowChangePassword(true)}
+            title="ตั้งค่าบัญชี"
+          >
+            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+              <path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z" />
+            </svg>
+          </button>
           <button onClick={handleLogout} className="btn-logout">
             <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
               <path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z" />
             </svg>
             <span>ออกจากระบบ</span>
           </button>
-          <button
-            className="menu-btn"
-            onClick={toggleSidebar}
-            aria-label="เปิดเมนู"
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
-              <path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z" />
-            </svg>
-          </button>
         </div>
       </div>
 
-      <div className="app-body">
+      <div
+        className="app-body"
+        style={{
+          ...(pinnedSidebarWidth ? { paddingLeft: pinnedSidebarWidth + 12 } : {}),
+          ...(pinnedSummarySidebarWidth ? { paddingRight: pinnedSummarySidebarWidth + 12 } : {}),
+        }}
+      >
         {showDashboard ? (
           <DashboardPage
             onSelectGroup={(groupId) => {
@@ -286,28 +383,38 @@ export default function App() {
             searching={searching}
             onSelectGroup={(groupId) => { setSelectedGroup(groupId); setSearch(''); }}
             onToggleImportant={handleToggleImportant}
+            myLineUserId={admin.lineUserId}
+            daysBack={daysBack}
+            onDaysBackChange={setDaysBack}
+            onDeleteMessages={handleDeleteMessages}
           />
         )}
         <Sidebar
           isOpen={isSidebarOpen}
           onClose={closeSidebar}
-          refreshKey={refreshKey}
-          selectedDate={selectedDate}
           selectedGroup={selectedGroup}
           realGroups={realGroups}
           privateChats={privateChats}
           groupSortBy={groupSortBy}
           onSortChange={setGroupSortBy}
-          onSelectDate={setSelectedDate}
           onSelectGroup={(groupId) => {
             setSelectedGroup(groupId);
             closeSidebar();
           }}
+          onOpenDriveFiles={() => setShowDriveFiles(true)}
+          onPinChange={setPinnedSidebarWidth}
+        />
+        <SummarySidebar
+          isOpen={isSummarySidebarOpen}
+          onClose={closeSummarySidebar}
+          refreshKey={refreshKey}
+          selectedDate={selectedDate}
+          onSelectDate={setSelectedDate}
           onSummarizeDay={handleSummarizeDay}
           onRangeChange={setDateRange}
           aiProvider={aiProvider}
           onAiProviderChange={setAiProvider}
-          onOpenDriveFiles={() => setShowDriveFiles(true)}
+          onPinChange={setPinnedSummarySidebarWidth}
         />
       </div>
 
@@ -322,6 +429,41 @@ export default function App() {
 
       {showDriveFiles && (
         <DriveFilesPage onClose={() => setShowDriveFiles(false)} />
+      )}
+
+      {/* modal เปลี่ยนรหัสผ่าน — เด้งขึ้นมาก็ต่อเมื่อ showChangePassword เป็น true เท่านั้น */}
+      {showChangePassword && (
+        <ChangePasswordModal
+          onClose={() => setShowChangePassword(false)}
+          currentEmail={admin.email}
+          onEmailSaved={(email) => setAdmin((prev) => ({ ...prev, email }))}
+        />
+      )}
+
+      {/* modal ขยายรูปโลโก้ — กดที่รูปเล็กบน header แล้วเด้งรูปใหญ่ พร้อมลิงก์ไป achalee.com */}
+      {showLogoModal && (
+        <div className="logo-modal-overlay" onClick={() => setShowLogoModal(false)}>
+          <div className="logo-modal" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="logo-modal-close"
+              onClick={() => setShowLogoModal(false)}
+              aria-label="ปิด"
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+              </svg>
+            </button>
+            <img className="logo-modal-img" src="/favicon.png" alt="Boonyarit" />
+            <a
+              className="logo-modal-link"
+              href="https://achalee.com"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              achalee.com
+            </a>
+          </div>
+        </div>
       )}
     </div>
   );

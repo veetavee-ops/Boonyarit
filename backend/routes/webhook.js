@@ -3,16 +3,56 @@ const router = express.Router();
 const line = require('@line/bot-sdk');
 const { Op } = require('sequelize');
 
-const { Message, User, Group, Setting } = require('../models/index');
+const { Message, User, Group, Setting, Admin, AdminGroup } = require('../models/index');
 const { getProfile, client } = require('../services/lineService');
 const { uploadToGCS, buildGCSPath } = require('../services/gcsService');
 
 const { ensureGroupFolder, uploadFileToDrive } = require('../services/driveService');
 const { alertError } = require('../services/notifyService');
+const { summarizeAllChatsForDate } = require('../services/aiService');
+
+// ถ้าคนส่งข้อความนี้ผูก LINE ID กับบัญชี admin ไว้ (เมนู "ตั้งค่าบัญชี")
+// ให้สิทธิ์เข้าถึงกลุ่ม/DM นี้ให้อัตโนมัติทันที — ไม่ต้องรอผูก LINE ID ใหม่หรือให้ superadmin ไปติ๊กเพิ่มเอง
+async function autoGrantAccessForMessage(userId, groupId, sourceType) {
+    try {
+        const admin = await Admin.findOne({ where: { lineUserId: userId } });
+        if (!admin) return;
+        const targetGroupId = sourceType === 'group' && groupId ? groupId : `private_${userId}`;
+        await AdminGroup.findOrCreate({ where: { adminId: admin.id, groupId: targetGroupId } });
+    } catch (e) {
+        console.error('❌ Auto-grant access error:', e.message);
+    }
+}
 
 async function isDriveEnabled() {
     const s = await Setting.findByPk('drive_enabled');
     return s ? s.value === 'true' : true; // default เปิดอยู่
+}
+
+// คำสั่งค้นหาไฟล์ผ่าน LINE — ตั้งค่าได้เองในหน้า admin panel (ไม่ต้อง hardcode/แก้โค้ด)
+async function getSearchKeyword() {
+    const s = await Setting.findByPk('search_keyword');
+    return (s?.value || 'ค้นหา').trim();
+}
+
+// คำสั่งให้ AI สรุปแชทผ่าน LINE — ตั้งค่าได้เองในหน้า admin panel เหมือนกัน
+// พิมพ์เดี่ยวๆ = สรุปวันนี้, พิมพ์ตามด้วยเลข+"วัน" (เช่น "สรุปเลย 2 วัน") = สรุปย้อนหลังกี่วัน
+async function getSummarizeKeyword() {
+    const s = await Setting.findByPk('summarize_keyword');
+    return (s?.value || 'สรุปเลย').trim();
+}
+
+// เช็คว่าข้อความเป็นคำสั่งสรุปไหม คืน { isMatch, daysBack } — daysBack = null คือสรุปวันนี้
+function matchSummarizeCommand(text, keyword) {
+    const pattern = new RegExp(`^${escapeRegex(keyword)}\\s*(?:(\\d+)\\s*วัน)?\\s*$`, 'u');
+    const match = (text || '').trim().match(pattern);
+    if (!match) return { isMatch: false, daysBack: null };
+    return { isMatch: true, daysBack: match[1] ? parseInt(match[1], 10) : null };
+}
+
+// escape อักขระพิเศษของ regex กันคำที่ตั้งเองมีอักขระที่ regex ตีความผิด
+function escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 
@@ -54,41 +94,52 @@ router.post('/', webhookMiddleware, async (req, res) => {
 });
 
 
-// ─── User DM: ค้นหาไฟล์ใน group ที่ user อยู่ด้วย (เฉพาะ canSearch=true) ────────
-async function handleUserDMSearch(event, userId) {
+// ─── ค้นหาไฟล์ผ่าน LINE — ใช้ได้ทั้งใน DM และในกลุ่ม ─────────────────────────
+// DM: ค้นหาข้ามทุกกลุ่มที่ user เป็นสมาชิก (ต้องมี canSearch หรือเป็น admin ที่ผูก LINE ID)
+// กลุ่ม: ค้นหาเฉพาะไฟล์ในกลุ่มนั้นเท่านั้น (กันข้อมูลข้ามกลุ่มหลุดไปให้คนอื่นเห็นกลางกลุ่ม)
+async function handleSearchCommand(event, userId, groupId, sourceType, keyword) {
     const text = (event.message?.text || '').trim();
     const replyToken = event.replyToken;
-    console.log('[UserDM] search from', userId?.slice(0, 10), ':', JSON.stringify(text));
+    console.log('[Search]', sourceType, 'from', userId?.slice(0, 10), ':', JSON.stringify(text));
 
-    const match = text.match(/^ค้นหา\s+(.+)/u);
+    const pattern = new RegExp(`^${escapeRegex(keyword)}\\s+(.+)`, 'u');
+    const match = text.match(pattern);
     if (!match) {
+        // ในกลุ่ม ไม่ตอบ "วิธีใช้งาน" กันบอทกวนคนอื่นในกลุ่มตอนแค่มีคนพิมพ์คำใกล้เคียง
+        if (sourceType === 'group') return;
         await client.replyMessage(replyToken, {
             type: 'text',
-            text: '🤖 วิธีใช้งาน\n\nพิมพ์: ค้นหา <ชื่อไฟล์>\n\nตัวอย่าง:\n• ค้นหา สัญญา\n• ค้นหา .pdf\n• ค้นหา ใบเสนอราคา\n\nจะแสดงผลสูงสุด 5 รายการล่าสุด'
-        }).catch(e => console.error('[UserDM] replyMessage error:', e.message));
+            text: `🤖 วิธีใช้งาน\n\nพิมพ์: ${keyword} <ชื่อไฟล์>\n\nตัวอย่าง:\n• ${keyword} สัญญา\n• ${keyword} .pdf\n• ${keyword} ใบเสนอราคา\n\nจะแสดงผลสูงสุด 5 รายการล่าสุด`
+        }).catch(e => console.error('[Search] replyMessage error:', e.message));
         return;
     }
 
-    const keyword = match[1].trim();
-    const safeKeyword = keyword.replace(/'/g, "''");
-    console.log('[UserDM] keyword:', keyword);
+    const searchKeyword = match[1].trim();
+    const safeKeyword = searchKeyword.replace(/'/g, "''");
+    console.log('[Search] keyword:', searchKeyword);
 
     try {
         const { literal } = require('sequelize');
 
-        // หา groupId ที่ user นี้เคยส่งข้อความใน group (แสดงว่าเป็นสมาชิก)
-        const userGroups = await Message.findAll({
-            attributes: ['groupId'],
-            where: { userId, sourceType: 'group', groupId: { [Op.not]: null } },
-            group: ['groupId'],
-            raw: true
-        });
-        const groupIds = userGroups.map(m => m.groupId);
+        let groupIds;
+        if (sourceType === 'group' && groupId) {
+            // ในกลุ่ม — ค้นหาเฉพาะไฟล์ของกลุ่มนี้เท่านั้น
+            groupIds = [groupId];
+        } else {
+            // DM — หา groupId ที่ user นี้เคยส่งข้อความใน group (แสดงว่าเป็นสมาชิก)
+            const userGroups = await Message.findAll({
+                attributes: ['groupId'],
+                where: { userId, sourceType: 'group', groupId: { [Op.not]: null } },
+                group: ['groupId'],
+                raw: true
+            });
+            groupIds = userGroups.map(m => m.groupId);
+        }
 
         if (groupIds.length === 0) {
             await client.replyMessage(replyToken, {
                 type: 'text',
-                text: `🔍 ไม่พบไฟล์ที่ชื่อมี "${keyword}"\n\n(ไม่พบกลุ่มที่คุณเป็นสมาชิก)`
+                text: `🔍 ไม่พบไฟล์ที่ชื่อมี "${searchKeyword}"\n\n(ไม่พบกลุ่มที่คุณเป็นสมาชิก)`
             }).catch(() => {});
             return;
         }
@@ -110,12 +161,12 @@ async function handleUserDMSearch(event, userId) {
         if (results.length === 0) {
             await client.replyMessage(replyToken, {
                 type: 'text',
-                text: `🔍 ไม่พบไฟล์ที่ชื่อมี "${keyword}"\n\nลองคำค้นอื่นดูครับ`
+                text: `🔍 ไม่พบไฟล์ที่ชื่อมี "${searchKeyword}"\n\nลองคำค้นอื่นดูครับ`
             }).catch(() => {});
             return;
         }
 
-        let reply = `🔍 ค้นหา: "${keyword}" — พบ ${results.length} รายการ\n\n`;
+        let reply = `🔍 ค้นหา: "${searchKeyword}" — พบ ${results.length} รายการ\n\n`;
         results.forEach((msg, i) => {
             const meta = msg.metadata || {};
             const fileName = meta.fileName || '(ไม่ทราบชื่อ)';
@@ -134,14 +185,93 @@ async function handleUserDMSearch(event, userId) {
             reply += `${i + 1}. ${fileName}\n   📂 ${groupName}  👤 ${sender}\n   📅 ${date}\n   🔗 ${link}\n\n`;
         });
 
-        console.log('[UserDM] replying with', results.length, 'results');
-        await client.replyMessage(replyToken, { type: 'text', text: reply.trim() }).catch(e => console.error('[UserDM] replyMessage error:', e.message));
+        console.log('[Search] replying with', results.length, 'results');
+        await client.replyMessage(replyToken, { type: 'text', text: reply.trim() }).catch(e => console.error('[Search] replyMessage error:', e.message));
     } catch (err) {
-        console.error('[DM Search Error]', err.message);
+        console.error('[Search Error]', err.message);
         await client.replyMessage(replyToken, {
             type: 'text',
             text: '❌ เกิดข้อผิดพลาดในการค้นหา กรุณาลองใหม่'
-        }).catch(e => console.error('[UserDM] replyMessage error:', e.message));
+        }).catch(e => console.error('[Search] replyMessage error:', e.message));
+    }
+}
+
+// LINE ข้อความยาวสุด 5000 ตัวอักษร — ตัดให้พอดีกันส่งไม่ออก
+const LINE_TEXT_LIMIT = 5000;
+function truncateForLine(text) {
+    if (text.length <= LINE_TEXT_LIMIT) return text;
+    return text.slice(0, LINE_TEXT_LIMIT - 20) + '\n…(ตัดข้อความ)';
+}
+
+// ─── ให้ AI สรุปแชทผ่าน LINE — ใช้ได้ทั้งในกลุ่มและ DM ────────────────────────
+// กลุ่ม: สรุปเฉพาะแชทของกลุ่มนั้น (ไม่ข้ามไปกลุ่มอื่น กันข้อมูลหลุด)
+// DM: สรุปทุกกลุ่มที่คนนั้นเป็นสมาชิก (เหมือนเลือก "ทุกกลุ่ม" ในหน้าเว็บ)
+// daysBack: null = วันนี้วันเดียว, ตัวเลข = ย้อนหลังกี่วัน (จากคำสั่งเช่น "สรุปเลย 2 วัน")
+async function handleSummarizeCommand(event, userId, groupId, sourceType, daysBack) {
+    const replyToken = event.replyToken;
+    console.log('[Summarize]', sourceType, 'from', userId?.slice(0, 10), 'daysBack:', daysBack);
+
+    try {
+        // "วันนี้" ตามเวลาไทย (UTC+7) ไม่ใช่เวลา server
+        const bkkNow = new Date(Date.now() + 7 * 60 * 60 * 1000);
+        const todayStr = bkkNow.toISOString().slice(0, 10);
+
+        let where;
+        if (daysBack && daysBack > 0) {
+            const cutoff = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+            where = { timestamp: { [Op.gte]: cutoff } };
+        } else {
+            const start = new Date(todayStr + 'T00:00:00.000Z');
+            const end = new Date(todayStr + 'T23:59:59.999Z');
+            where = { timestamp: { [Op.between]: [start, end] } };
+        }
+
+        if (sourceType === 'group' && groupId) {
+            where.groupId = groupId;
+        } else {
+            // DM — สรุปทุกกลุ่มที่ userId นี้เคยส่งข้อความ (เป็นสมาชิกอยู่)
+            const userGroups = await Message.findAll({
+                attributes: ['groupId'],
+                where: { userId, sourceType: 'group', groupId: { [Op.not]: null } },
+                group: ['groupId'],
+                raw: true,
+            });
+            const groupIds = userGroups.map((m) => m.groupId);
+            if (groupIds.length === 0) {
+                await client.replyMessage(replyToken, { type: 'text', text: '📋 ไม่พบกลุ่มที่คุณเป็นสมาชิกครับ' }).catch(() => {});
+                return;
+            }
+            where.groupId = { [Op.in]: groupIds };
+        }
+
+        const messages = await Message.findAll({
+            where,
+            include: [
+                { model: User, as: 'user', attributes: ['displayName'] },
+                { model: Group, as: 'group', attributes: ['groupName'] },
+            ],
+            order: [['timestamp', 'ASC']],
+            limit: 2000,
+        });
+
+        if (messages.length === 0) {
+            const label = daysBack ? `ย้อนหลัง ${daysBack} วัน` : 'วันนี้';
+            await client.replyMessage(replyToken, { type: 'text', text: `📋 ${label}ยังไม่มีข้อความให้สรุปครับ` }).catch(() => {});
+            return;
+        }
+
+        const result = await summarizeAllChatsForDate(messages, 'groq');
+        const rangeLabel = daysBack ? `ย้อนหลัง ${daysBack} วัน` : 'วันนี้';
+        const reply = `📋 สรุปแชท${rangeLabel} (${result.messageCount} ข้อความ)\n\n${result.summary}`;
+
+        await client.replyMessage(replyToken, { type: 'text', text: truncateForLine(reply) })
+            .catch(e => console.error('[Summarize] replyMessage error:', e.message));
+    } catch (err) {
+        console.error('[Summarize Error]', err.message);
+        await client.replyMessage(replyToken, {
+            type: 'text',
+            text: '❌ สรุปแชทไม่สำเร็จ กรุณาลองใหม่'
+        }).catch(e => console.error('[Summarize] replyMessage error:', e.message));
     }
 }
 
@@ -155,15 +285,49 @@ async function handleEvent(event, io) {
     const userId = source.userId;
     const groupId = source.groupId || null;
 
-    // ── User DM: ตรวจสิทธิ์ก่อน ถ้า canSearch=true ค้นหาได้ ถ้าไม่มีสิทธิ์ → ignore ─
-    if (sourceType === 'user' && message.type === 'text') {
-        const lineUser = await User.findByPk(userId);
-        if (lineUser?.canSearch) {
-            await handleUserDMSearch(event, userId);
-            return;
+    // DM จาก LINE account ที่ผูกกับ admin คนไหนไว้ (เมนู "ตั้งค่าบัญชี" ผูก LINE ID)
+    // ให้ถือเป็นแชทปกติเสมอ — เก็บเข้าคลัง + auto-grant สิทธิ์ให้เจ้าของเห็น DM ตัวเอง
+    const linkedAdmin = sourceType === 'user' ? await Admin.findOne({ where: { lineUserId: userId } }) : null;
+
+    if (message.type === 'text') {
+        const searchKeyword = await getSearchKeyword();
+        const isSearchCommand = new RegExp(`^${escapeRegex(searchKeyword)}\\s+`, 'u').test(message.text || '');
+        const summarizeKeyword = await getSummarizeKeyword();
+        const { isMatch: isSummarizeCommand, daysBack } = matchSummarizeCommand(message.text, summarizeKeyword);
+
+        // ในกลุ่ม — ใครก็พิมพ์คำสั่งค้นหา/สรุปได้ (จำกัดแค่ข้อมูลของกลุ่มนั้น ไม่ข้ามไปกลุ่มอื่น)
+        if (sourceType === 'group') {
+            if (isSearchCommand) {
+                await handleSearchCommand(event, userId, groupId, sourceType, searchKeyword);
+                return;
+            }
+            if (isSummarizeCommand) {
+                await handleSummarizeCommand(event, userId, groupId, sourceType, daysBack);
+                return;
+            }
         }
-        // ไม่มีสิทธิ์ → ignore เงียบๆ ไม่ตอบกลับ ไม่บันทึก
-        return;
+
+        if (sourceType === 'user') {
+            // คำสั่งค้นหา/สรุป ใช้ได้เสมอถ้าเป็น admin ที่ผูก LINE ID ไว้ (ไม่ต้องพึ่ง canSearch)
+            if (linkedAdmin && (isSearchCommand || isSummarizeCommand)) {
+                if (isSearchCommand) await handleSearchCommand(event, userId, groupId, sourceType, searchKeyword);
+                else await handleSummarizeCommand(event, userId, groupId, sourceType, daysBack);
+                return;
+            }
+
+            // ── User DM (ลูกค้าทั่วไป ไม่ได้ผูกกับ admin คนไหน): ตรวจสิทธิ์ก่อน ถ้า canSearch=true ใช้คำสั่งได้ ถ้าไม่มีสิทธิ์ → ignore ─
+            if (!linkedAdmin) {
+                const lineUser = await User.findByPk(userId);
+                if (lineUser?.canSearch) {
+                    if (isSummarizeCommand) await handleSummarizeCommand(event, userId, groupId, sourceType, daysBack);
+                    else await handleSearchCommand(event, userId, groupId, sourceType, searchKeyword);
+                    return;
+                }
+                // ไม่มีสิทธิ์ → ignore เงียบๆ ไม่ตอบกลับ ไม่บันทึก
+                return;
+            }
+            // linkedAdmin + ข้อความทั่วไป (ไม่ใช่คำสั่งค้นหา/สรุป) → ปล่อยผ่านไปบันทึกเป็นแชทปกติด้านล่าง
+        }
     }
 
     // --- GROUP upsert ---
@@ -200,6 +364,8 @@ async function handleEvent(event, io) {
             if (enabled) ensureGroupFolder(folderName).catch(e => console.error('Drive folder error:', e.message));
         });
     }
+
+    await autoGrantAccessForMessage(userId, groupId, sourceType);
 
 
     if (message.type === 'image') {

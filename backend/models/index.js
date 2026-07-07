@@ -21,6 +21,10 @@ AdminGroup.belongsTo(Admin, { foreignKey: 'adminId' });
 Label.hasMany(GroupLabel, { foreignKey: 'labelId', as: 'assignments' });
 GroupLabel.belongsTo(Label, { foreignKey: 'labelId' });
 
+// Label เป็นของ admin คนเดียว (ไม่แชร์ร่วมกันข้าม user)
+Admin.hasMany(Label, { foreignKey: 'adminId', as: 'labels' });
+Label.belongsTo(Admin, { foreignKey: 'adminId' });
+
 module.exports = {
   User,
   Group,

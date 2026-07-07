@@ -7,11 +7,13 @@ let socket = null
  * Custom hook for Socket.IO connection
  * Uses ref pattern — listener is stable, only re-registered when groupId changes
  */
-export function useSocket(groupId, onNewMessage) {
+export function useSocket(groupId, onNewMessage, onMessagesDeleted) {
   // Keep latest callback in ref — no need to re-register listener when callback changes
   const onNewMessageRef = useRef(onNewMessage)
+  const onMessagesDeletedRef = useRef(onMessagesDeleted)
   useEffect(() => {
     onNewMessageRef.current = onNewMessage
+    onMessagesDeletedRef.current = onMessagesDeleted
   })
 
   useEffect(() => {
@@ -29,8 +31,12 @@ export function useSocket(groupId, onNewMessage) {
     const handleNewMessage = (message) => {
       onNewMessageRef.current(message)
     }
+    const handleMessagesDeleted = (payload) => {
+      onMessagesDeletedRef.current?.(payload)
+    }
 
     socket.on('new-message', handleNewMessage)
+    socket.on('messages-deleted', handleMessagesDeleted)
 
     if (groupId) {
       socket.emit('join-room', { groupId })
@@ -38,6 +44,7 @@ export function useSocket(groupId, onNewMessage) {
 
     return () => {
       socket.off('new-message', handleNewMessage)
+      socket.off('messages-deleted', handleMessagesDeleted)
     }
   }, [groupId]) // ← เฉพาะ groupId เท่านั้น
 

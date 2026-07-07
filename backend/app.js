@@ -21,6 +21,10 @@ const usersRoute = require('./routes/users');
 const lineUsersRoute = require('./routes/lineUsers');
 const settingsRoute = require('./routes/settings');
 
+// module สำหรับเปลี่ยนรหัสผ่าน + ลืมรหัสผ่าน (ส่งลิงก์ทาง email) — ดูรายละเอียดใน modules/passwordAuth/index.js
+const { createPasswordAuthRouter } = require('./modules/passwordAuth');
+const sequelize = require('./config/database');
+const { Admin } = require('./models');
 
 const app = express();
 
@@ -63,6 +67,28 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/media', mediaRoute); // no rate limit — just redirects to GCS signed URL
 app.use('/api', apiLimiter);
 app.use('/api/auth', authRoute);
+
+// สร้าง router ของ passwordAuth module โดยส่งค่าตั้งค่าของโปรเจกต์นี้เข้าไป
+// (ตัว module เองไม่รู้จัก Admin model หรือชื่อ env var ของโปรเจกต์นี้เลย รับผ่าน options ทั้งหมด)
+const passwordAuthRouter = createPasswordAuthRouter({
+  sequelize,
+  UserModel: Admin,
+  jwtSecret: process.env.JWT_SECRET,
+  appBaseUrl: process.env.FRONTEND_URL,
+  smtp: {
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT) || 587,
+    secure: process.env.SMTP_SECURE === 'true',
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS,
+    from: process.env.SMTP_FROM,
+  },
+  fields: { email: 'email', password: 'password' },
+  tokenExpiryMinutes: 30,
+});
+// mount ไว้ที่ path เดียวกับ authRoute เดิม (/api/auth) จะได้ endpoint:
+// POST /api/auth/change-password, /api/auth/forgot-password, /api/auth/reset-password/:token
+app.use('/api/auth', passwordAuthRouter);
 app.use('/api', adminRoute);
 app.use('/api/groups', groupsRoute);
 app.use('/api/messages', messagesRoute);
@@ -74,12 +100,25 @@ app.use('/api/settings', settingsRoute);
 
 
 // ===== Serve Frontend (SPA) =====
+// Vite ตั้งชื่อไฟล์ JS/CSS ด้วย content hash (เปลี่ยนชื่อทุกครั้งที่เนื้อหาเปลี่ยน)
+// เลยแคชไฟล์พวกนี้ได้ตลอดไปอย่างปลอดภัย แต่ index.html ต้องห้ามแคชเด็ดขาด
+// ไม่งั้น browser จะค้าง index.html เก่าที่ชี้ไป bundle เก่าที่ไม่มีอยู่แล้วหลัง deploy ใหม่
 const wwwPath = path.join(__dirname, 'www');
-app.use(express.static(wwwPath));
+app.use(express.static(wwwPath, {
+  index: false,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('index.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    }
+  },
+}));
 app.get('*', (req, res, next) => {
   if (req.path.startsWith('/api') || req.path.startsWith('/webhook') || req.path.startsWith('/media') || req.path.startsWith('/socket.io')) {
     return next();
   }
+  res.setHeader('Cache-Control', 'no-cache');
   res.sendFile(path.join(wwwPath, 'index.html'));
 });
 

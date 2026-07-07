@@ -54,7 +54,9 @@ router.post('/login', async (req, res) => {
       admin: {
         id: admin.id,
         username: admin.username,
-        role: admin.role
+        role: admin.role,
+        lineUserId: admin.lineUserId,
+        email: admin.email
       }
     });
   } catch (error) {
@@ -116,7 +118,7 @@ router.get('/me', async (req, res) => {
 
     const decoded = jwt.verify(token, JWT_SECRET);
     const admin = await Admin.findByPk(decoded.id, {
-      attributes: ['id', 'username', 'role']
+      attributes: ['id', 'username', 'role', 'lineUserId', 'email']
     });
 
     if (!admin) {
@@ -126,6 +128,42 @@ router.get('/me', async (req, res) => {
     res.json({ admin });
   } catch (error) {
     res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+router.patch('/profile', async (req, res) => {
+  try {
+    const token = req.cookies?.token || req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const admin = await Admin.findByPk(decoded.id);
+    if (!admin) return res.status(401).json({ error: 'Invalid token' });
+
+    const { lineUserId, email } = req.body;
+    const updates = {};
+
+    if (lineUserId !== undefined) {
+      updates.lineUserId = lineUserId || null;
+    }
+
+    // อีเมล — ใช้สำหรับ "ลืมรหัสผ่าน" เท่านั้น ปล่อยว่างได้ (เอาออกจากบัญชีก็ได้)
+    if (email !== undefined) {
+      const trimmed = (email || '').trim();
+      if (trimmed && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+        return res.status(400).json({ error: 'รูปแบบอีเมลไม่ถูกต้อง' });
+      }
+      updates.email = trimmed || null;
+    }
+
+    await admin.update(updates);
+
+    res.json({ ok: true, lineUserId: admin.lineUserId, email: admin.email });
+  } catch (error) {
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ error: 'อีเมลนี้ถูกใช้งานโดยบัญชีอื่นแล้ว' });
+    }
+    res.status(500).json({ error: error.message });
   }
 });
 

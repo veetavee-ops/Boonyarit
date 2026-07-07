@@ -26,7 +26,8 @@ export function useGroups(refreshKey = 0) {
 }
 
 // Messages: fetch with pagination
-export function useMessages(groupId) {
+// sinceDays: จำกัดให้โหลดแค่ N วันย้อนหลัง (null = โหลดทั้งหมดแบบเดิม ไม่จำกัดวัน)
+export function useMessages(groupId, sinceDays = null) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(false)
 
@@ -43,7 +44,7 @@ export function useMessages(groupId) {
     setLoading(true)
     setHasMore(true) // reset on group change
 
-    fetchMessages({ groupId, limit })
+    fetchMessages({ groupId, limit, sinceDays })
       .then(data => {
         if (!cancelled) {
           setMessages(data)
@@ -61,7 +62,7 @@ export function useMessages(groupId) {
       })
 
     return () => { cancelled = true }
-  }, [groupId])
+  }, [groupId, sinceDays])
 
   const loadMore = useCallback(async () => {
     if (!groupId || loadingMore || !hasMore || messages.length === 0) return
@@ -72,7 +73,8 @@ export function useMessages(groupId) {
       const data = await fetchMessages({
         groupId,
         limit,
-        before: oldestMessage.timestamp
+        before: oldestMessage.timestamp,
+        sinceDays
       })
 
       if (data.length > 0) {
@@ -85,7 +87,7 @@ export function useMessages(groupId) {
     } finally {
       setLoadingMore(false)
     }
-  }, [groupId, loadingMore, hasMore, messages])
+  }, [groupId, loadingMore, hasMore, messages, sinceDays])
 
   const addMessage = useCallback((newMessage) => {
     setMessages(prev => {
@@ -98,5 +100,11 @@ export function useMessages(groupId) {
     setMessages(prev => prev.map(m => m.messageId === messageId ? { ...m, ...patch } : m))
   }, [])
 
-  return { messages, loading, hasMore, loadingMore, loadMore, addMessage, updateMessage }
+  // ลบข้อความออกจาก state ทันที (optimistic) — เรียกหลังลบสำเร็จ หรือตอนรับ socket event จากคนอื่น
+  const removeMessages = useCallback((messageIds) => {
+    const idSet = new Set(messageIds)
+    setMessages(prev => prev.filter(m => !idSet.has(m.id)))
+  }, [])
+
+  return { messages, loading, hasMore, loadingMore, loadMore, addMessage, updateMessage, removeMessages }
 }

@@ -1,21 +1,22 @@
 @import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700&display=swap');
 
 :root {
-  --primary-color: #06C755;
-  --primary-hover: #05b34c;
-  --primary-dim: rgba(6, 199, 85, 0.12);
+  /* โทน "Archive Vault" — ครีมอุ่นๆ + ส้ม เหมือนหน้า login ทั้งแอป */
+  --primary-color: #d97742;
+  --primary-hover: #c76631;
+  --primary-dim: rgba(217, 119, 66, 0.12);
 
-  --bg-app: #0f1117;
-  --bg-sidebar: #161b27;
-  --bg-surface: #1e2433;
-  --bg-elevated: #252d3d;
+  --bg-app: #f4efe6;
+  --bg-sidebar: #fbf7f0;
+  --bg-surface: #fdfbf7;
+  --bg-elevated: #f3ead9;
 
-  --text-primary: #e2e8f0;
-  --text-secondary: #94a3b8;
-  --text-tertiary: #64748b;
+  --text-primary: #3a2f26;
+  --text-secondary: #5c4d3d;
+  --text-tertiary: #8a7864;
 
-  --border-color: #2a3142;
-  --border-subtle: #1e2433;
+  --border-color: #e4d8c6;
+  --border-subtle: #ede1cd;
 
   --header-height: 48px;
 }
@@ -43,7 +44,7 @@ body {
 .app-header {
   height: var(--header-height);
   padding: 0 20px;
-  background: #111827;
+  background: var(--bg-sidebar);
   border-bottom: 1px solid var(--border-color);
   display: flex;
   align-items: center;
@@ -51,7 +52,7 @@ body {
   position: relative;
   z-index: 10;
   flex-shrink: 0;
-  box-shadow: 0 1px 0 rgba(255,255,255,0.04);
+  box-shadow: 0 1px 0 rgba(0,0,0,0.02);
 }
 
 .header-brand {
@@ -68,6 +69,72 @@ body {
   display: flex;
   align-items: center;
   color: var(--primary-color);
+}
+
+.header-brand-photo {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.header-brand-photo:hover {
+  transform: scale(1.1);
+}
+
+/* ─── Logo Modal (คลิกรูปโลโก้เล็กใน header → ขยาย + ลิงก์ achalee.com) ──── */
+.logo-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+}
+.logo-modal {
+  position: relative;
+  background: var(--bg-surface);
+  border-radius: 16px;
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+}
+.logo-modal-img {
+  width: 220px;
+  height: 220px;
+  border-radius: 50%;
+  object-fit: cover;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+.logo-modal-link {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--primary-color);
+  text-decoration: none;
+}
+.logo-modal-link:hover {
+  text-decoration: underline;
+}
+.logo-modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+}
+.logo-modal-close:hover {
+  color: var(--text-primary);
 }
 
 .header-brand-name {
@@ -102,9 +169,9 @@ body {
   align-items: center;
   gap: 5px;
   padding: 5px 12px;
-  background: rgba(239, 68, 68, 0.12);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+  border: 1px solid rgba(220, 38, 38, 0.2);
   border-radius: 8px;
   font-size: 12px;
   font-weight: 500;
@@ -114,9 +181,9 @@ body {
 }
 
 .btn-logout:hover {
-  background: rgba(239, 68, 68, 0.22);
-  border-color: rgba(239, 68, 68, 0.45);
-  color: #fca5a5;
+  background: rgba(220, 38, 38, 0.16);
+  border-color: rgba(220, 38, 38, 0.4);
+  color: #991b1b;
 }
 
 .btn-drive {
@@ -126,7 +193,7 @@ body {
   padding: 5px 12px;
   background: var(--primary-dim);
   color: var(--primary-color);
-  border: 1px solid rgba(6, 199, 85, 0.25);
+  border: 1px solid rgba(249, 115, 22, 0.25);
   border-radius: 8px;
   font-size: 12px;
   font-weight: 600;
@@ -136,15 +203,22 @@ body {
 }
 
 .btn-drive:hover {
-  background: rgba(6, 199, 85, 0.2);
-  border-color: rgba(6, 199, 85, 0.4);
+  background: rgba(249, 115, 22, 0.2);
+  border-color: rgba(249, 115, 22, 0.4);
 }
 
 .app-body {
   flex: 1;
   display: flex;
+  gap: 12px;
+  padding: 12px;
   overflow: hidden;
   height: calc(100dvh - var(--header-height));
+  transition: padding-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+@media screen and (max-width: 768px) {
+  .app-body { gap: 0; padding: 0; }
 }
 
 /* ── Loading Screen ───────────────────────────────────────────── */
@@ -168,7 +242,7 @@ body {
 .spinner {
   width: 40px;
   height: 40px;
-  border: 3px solid rgba(6, 199, 85, 0.15);
+  border: 3px solid rgba(249, 115, 22, 0.15);
   border-top-color: var(--primary-color);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -179,12 +253,12 @@ body {
 /* ── Scrollbar ────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #2d3748; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #3d4d5e; }
+::-webkit-scrollbar-thumb { background: #d4c4a8; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #c2ae8a; }
 
-/* ── Mobile ───────────────────────────────────────────────────── */
+/* ── ปุ่มเปิด popup ตั้งค่าการสรุป AI (มุมซ้ายบน) ─────────────────── */
 .menu-btn {
-  display: none;
+  display: flex;
   background: none;
   border: none;
   cursor: pointer;
@@ -199,12 +273,12 @@ body {
 .header-left-controls {
   display: flex;
   align-items: center;
+  gap: 4px;
   min-width: 40px;
 }
 
 @media screen and (max-width: 768px) {
   .app-header { padding: 0 12px; gap: 8px; }
-  .menu-btn { display: block; }
   .header-brand { position: static; transform: none; flex: 1; justify-content: flex-start; min-width: 0; }
   .header-brand-name { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .user-info { gap: 6px; }

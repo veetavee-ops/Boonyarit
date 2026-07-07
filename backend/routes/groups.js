@@ -72,7 +72,7 @@ router.get('/', async (req, res) => {
     if (req.admin.role === 'user') {
       const allowed = await getAllowedGroupIds(req.admin.id);
       groupChats = groupChats.filter((g) => allowed.includes(g.groupId));
-      privateChats = [];
+      privateChats = privateChats.filter((g) => allowed.includes(g.groupId));
     }
 
     res.json([...groupChats, ...privateChats]);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchUsers, createUser, deleteUser, assignGroupToUser, unassignGroupFromUser } from '../api/users';
+import { fetchUsers, createUser, updateUserLineId, deleteUser, assignGroupToUser, unassignGroupFromUser } from '../api/users';
 import { fetchGroups } from '../api/messages';
 import { fetchLineUsers, toggleLineUserSearch } from '../api/lineUsers';
 import { fetchSettings, updateSetting } from '../api/settings';
@@ -12,12 +12,21 @@ export default function AdminPanel() {
   const [newUsername, setNewUsername] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newRole, setNewRole] = useState('user');
+  const [newLineUserId, setNewLineUserId] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [lineUsers, setLineUsers] = useState([]);
   const [lineUsersLoading, setLineUsersLoading] = useState(true);
   const [driveEnabled, setDriveEnabled] = useState(true);
   const [driveToggling, setDriveToggling] = useState(false);
+  // คำสั่งค้นหาไฟล์ผ่าน LINE bot — แก้เองได้ตรงนี้ ไม่ต้องแก้โค้ด (default "ค้นหา")
+  const [searchKeyword, setSearchKeyword] = useState('ค้นหา');
+  const [searchKeywordSaving, setSearchKeywordSaving] = useState(false);
+  const [searchKeywordSaved, setSearchKeywordSaved] = useState(false);
+  // คำสั่งให้ AI สรุปแชทวันนี้ผ่าน LINE bot — แก้เองได้เหมือนกัน (default "สรุป")
+  const [summarizeKeyword, setSummarizeKeyword] = useState('สรุปเลย');
+  const [summarizeKeywordSaving, setSummarizeKeywordSaving] = useState(false);
+  const [summarizeKeywordSaved, setSummarizeKeywordSaved] = useState(false);
 
   useEffect(() => {
     Promise.all([fetchUsers(), fetchGroups()])
@@ -34,7 +43,11 @@ export default function AdminPanel() {
       .finally(() => setLineUsersLoading(false));
 
     fetchSettings()
-      .then((s) => { if (s.drive_enabled !== undefined) setDriveEnabled(s.drive_enabled === 'true'); })
+      .then((s) => {
+        if (s.drive_enabled !== undefined) setDriveEnabled(s.drive_enabled === 'true');
+        if (s.search_keyword) setSearchKeyword(s.search_keyword);
+        if (s.summarize_keyword) setSummarizeKeyword(s.summarize_keyword);
+      })
       .catch(() => {});
   }, []);
 
@@ -48,6 +61,36 @@ export default function AdminPanel() {
       setError('อัปเดต Drive setting ไม่สำเร็จ');
     } finally {
       setDriveToggling(false);
+    }
+  };
+
+  const handleSaveSearchKeyword = async () => {
+    const trimmed = searchKeyword.trim();
+    if (!trimmed) return;
+    setSearchKeywordSaving(true);
+    setSearchKeywordSaved(false);
+    try {
+      await updateSetting('search_keyword', trimmed);
+      setSearchKeywordSaved(true);
+    } catch (err) {
+      setError('อัปเดตคำสั่งค้นหาไม่สำเร็จ');
+    } finally {
+      setSearchKeywordSaving(false);
+    }
+  };
+
+  const handleSaveSummarizeKeyword = async () => {
+    const trimmed = summarizeKeyword.trim();
+    if (!trimmed) return;
+    setSummarizeKeywordSaving(true);
+    setSummarizeKeywordSaved(false);
+    try {
+      await updateSetting('summarize_keyword', trimmed);
+      setSummarizeKeywordSaved(true);
+    } catch (err) {
+      setError('อัปเดตคำสั่งสรุปไม่สำเร็จ');
+    } finally {
+      setSummarizeKeywordSaving(false);
     }
   };
 
@@ -65,17 +108,29 @@ export default function AdminPanel() {
   const handleCreate = async () => {
     if (!newUsername.trim() || !newPassword.trim()) return;
     try {
-      const created = await createUser(newUsername.trim(), newPassword.trim(), newRole);
+      const created = await createUser(newUsername.trim(), newPassword.trim(), newRole, newLineUserId || null);
       setUsers((prev) => [...prev, created]);
       setNewUsername('');
       setNewPassword('');
       setNewRole('user');
+      setNewLineUserId('');
       setError('');
     } catch (err) {
       setError(err.response?.data?.error || 'สร้างไม่สำเร็จ');
       setNewUsername('');
       setNewPassword('');
       setNewRole('user');
+      setNewLineUserId('');
+    }
+  };
+
+  const handleUpdateLineId = async (userId, lineUserId) => {
+    try {
+      const updated = await updateUserLineId(userId, lineUserId || null);
+      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, lineUserId: updated.lineUserId, groupIds: updated.groupIds } : u)));
+      setSelectedUser((prev) => (prev?.id === userId ? { ...prev, lineUserId: updated.lineUserId, groupIds: updated.groupIds } : prev));
+    } catch (err) {
+      setError(err.response?.data?.error || 'อัปเดต LINE ID ไม่สำเร็จ');
     }
   };
 
@@ -147,8 +202,21 @@ export default function AdminPanel() {
               <option value="user">User</option>
               <option value="admin">Admin</option>
             </select>
+            <select
+              className="ap-select"
+              value={newLineUserId}
+              onChange={(e) => setNewLineUserId(e.target.value)}
+            >
+              <option value="">— ไม่ผูก LINE ID —</option>
+              {lineUsers.map((u) => (
+                <option key={u.userId} value={u.userId}>{u.displayName || u.userId}</option>
+              ))}
+            </select>
             <button className="ap-btn-primary" onClick={handleCreate}>สร้าง</button>
           </div>
+          <p className="ap-note">
+            ผูก LINE ID เพื่อให้ข้อความของคนนี้ขึ้นชิดขวาตอนดูแชท — ต้องให้เขาทักในกลุ่ม/DM มาก่อนอย่างน้อย 1 ครั้ง ถึงจะเลือกได้จากลิสต์นี้
+          </p>
         </div>
 
         <div className="ap-columns">
@@ -192,6 +260,19 @@ export default function AdminPanel() {
                 {selectedUser.role === 'admin' && (
                   <p className="ap-note">Admin เห็นทุกกลุ่มอยู่แล้ว — ไม่ต้อง assign</p>
                 )}
+                <div className="ap-form-row">
+                  <select
+                    className="ap-select"
+                    value={selectedUser.lineUserId || ''}
+                    onChange={(e) => handleUpdateLineId(selectedUser.id, e.target.value)}
+                  >
+                    <option value="">— ไม่ผูก LINE ID —</option>
+                    {lineUsers.map((u) => (
+                      <option key={u.userId} value={u.userId}>{u.displayName || u.userId}</option>
+                    ))}
+                  </select>
+                </div>
+                <p className="ap-note">LINE ID ที่ผูกไว้: {selectedUser.lineUserId || 'ยังไม่ได้ผูก'}</p>
                 <ul className="ap-group-list">
                   {groups.map((g) => {
                     const isOn = selectedUser.groupIds.includes(g.groupId);
@@ -233,6 +314,55 @@ export default function AdminPanel() {
           >
             {driveToggling ? '...' : driveEnabled ? 'เปิดอยู่' : 'ปิดอยู่'}
           </button>
+        </div>
+
+        <div className="ap-setting-row">
+          <div className="ap-setting-info">
+            <span className="ap-setting-label">คำสั่งค้นหาไฟล์ผ่าน LINE bot</span>
+            <span className="ap-setting-desc">
+              พิมพ์คำนี้ตามด้วยคำค้นหาใน DM หรือในกลุ่ม (เช่น "{searchKeyword} สัญญา") — แก้เป็นคำอะไรก็ได้เอง
+            </span>
+          </div>
+          <div className="ap-form-row" style={{ flex: '0 0 auto' }}>
+            <input
+              className="ap-input"
+              style={{ width: 140 }}
+              value={searchKeyword}
+              onChange={(e) => { setSearchKeyword(e.target.value); setSearchKeywordSaved(false); }}
+            />
+            <button
+              className="ap-btn-primary"
+              onClick={handleSaveSearchKeyword}
+              disabled={searchKeywordSaving || !searchKeyword.trim()}
+            >
+              {searchKeywordSaving ? 'กำลังบันทึก...' : searchKeywordSaved ? 'บันทึกแล้ว ✓' : 'บันทึก'}
+            </button>
+          </div>
+        </div>
+
+        <div className="ap-setting-row">
+          <div className="ap-setting-info">
+            <span className="ap-setting-label">คำสั่งให้ AI สรุปแชทผ่าน LINE bot</span>
+            <span className="ap-setting-desc">
+              พิมพ์คำนี้เดี่ยวๆ = สรุปวันนี้ | พิมพ์ตามด้วยเลข+"วัน" เช่น "{summarizeKeyword}2วัน" = สรุปย้อนหลัง 2 วัน
+              — พิมพ์ในกลุ่มสรุปเฉพาะกลุ่มนั้น พิมพ์ใน DM สรุปทุกกลุ่มที่เป็นสมาชิก
+            </span>
+          </div>
+          <div className="ap-form-row" style={{ flex: '0 0 auto' }}>
+            <input
+              className="ap-input"
+              style={{ width: 140 }}
+              value={summarizeKeyword}
+              onChange={(e) => { setSummarizeKeyword(e.target.value); setSummarizeKeywordSaved(false); }}
+            />
+            <button
+              className="ap-btn-primary"
+              onClick={handleSaveSummarizeKeyword}
+              disabled={summarizeKeywordSaving || !summarizeKeyword.trim()}
+            >
+              {summarizeKeywordSaving ? 'กำลังบันทึก...' : summarizeKeywordSaved ? 'บันทึกแล้ว ✓' : 'บันทึก'}
+            </button>
+          </div>
         </div>
       </div>
 
