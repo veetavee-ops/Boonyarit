@@ -31,7 +31,7 @@
 
 ## Session Status
 
-### อัพเดท: 28 มิถุนายน 2569 (session 10)
+### อัพเดท: 8 กรกฎาคม 2569 (session 11)
 
 ### ✅ Session 1 — Repo rename + Image Drive upload fix (24 มิ.ย. 69)
 
@@ -256,6 +256,42 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
   - `tax-ocr/`: CLAUDE.md x5 (keep `1BUdruo8...` session 19, 31923 bytes), `.env` x3 (keep `1e2288av...` มี OPENAI_API_KEY) — **รอ user confirm**
   - root level: `gdrive.md`, `start.md` อยู่ผิดที่ ควรอยู่ใน `_claude-skills` — **รอ user confirm**
 - `mydev_CorePlan_Erp/` ใน Drive: มีแค่ `memory/` folder (10+ project memory files จาก session พ.ค. 69) ไม่มี CLAUDE.md หรือ .env — เพราะ `/udskill`/`/addcreds` ยังไม่มีตอนนั้น
+
+### ✅ Session 11 — PersonalVault: personal asset portfolio tracker (28 มิ.ย.–8 ก.ค. 69)
+
+**⚠️ สำคัญ: โปรเจกต์นี้อยู่คนละที่ ไม่ใช่ repo/DB เดียวกับ Boonyarit**
+- Path: `D:\_888_230626_Dev Project\PersonalVault\backend\` — repo/package.json/process แยกต่างหากจริงๆ ไม่ใช่ folder ย่อยใน Boonyarit
+- Session Claude ที่เปิดใน Boonyarit จะไม่เห็นโค้ดนี้อัตโนมัติ ต้องเปิด working dir ที่ PersonalVault เอง (หรือบอก Claude ว่าให้ไปดูที่นั่น)
+
+**ที่มา (ตัดสินใจหลังคุยหลายรอบ):**
+- เริ่มจากอยากได้ตาราง "กระแสเงินสด" → ขยายเป็น portfolio ทรัพย์สินทั้งหมด (เงิน/ที่ดิน/ทองอื่นๆ) → คิดจะฝากไว้ใน DB เดียวกับ Boonyarit แต่แยก schema → สุดท้ายตัดสินใจแยกเป็น **standalone app คนละ repo/process จริง** เพราะกลัวเรื่อง reliability/blast radius (ถ้าโค้ดส่วนตัวพังไม่อยากให้กระทบบอท LINE ที่ลูกค้าใช้จริง) ไม่ใช่เรื่องความเร็ว
+- เคยคิดจะทำ password manager ในตัวด้วย — **ตัดออกแล้ว** ให้ใช้ Bitwarden/KeePass แทน (เก็บรหัสผ่านเองเสี่ยงเกินไป)
+- ลิงก์/bookmark เว็บที่ใช้บ่อย — ยังไม่ทำ (deferred ไปหลัง Phase 1 asset portfolio)
+
+**สถาปัตยกรรมที่ใช้:**
+- Node/Express แยก process จาก Boonyarit แต่วางแผนรันบน droplet เดียวกัน (คนละ port เช่น 3001, Caddy ชี้ path/subdomain ใหม่ไป) — ยังไม่ deploy จริง ตอนนี้รันแค่ local
+- ต่อ Postgres (Neon) **instance เดียวกับ Boonyarit** แต่คนละ schema (`personal_portfolio`) — ใช้ `DATABASE_URL` ตัวเดียวกับใน Boonyarit `.env`
+- Auth แบบ single-user ง่ายๆ (password เดียว + JWT cookie) ไม่มี Admin/role table แบบ Boonyarit
+- Data model: `Asset` (base + JSONB `attributes` ตาม type) + `AssetTransaction` (รายรับ/จ่าย) + `AssetValuation` (ประวัติมูลค่า — net worth คำนวณจาก valuation ล่าสุด ไม่ใช่ field เดียวที่ทับ)
+- Validate JSONB attributes ด้วย Zod ตาม asset type (land/bank_account/gold/stock/vehicle/liability/other)
+
+**Phase 1 เสร็จแล้ว + ทดสอบผ่าน (login → CRUD → net worth summary):**
+- `models/`: Asset.js, AssetTransaction.js, AssetValuation.js, index.js
+- `validators/assetSchemas.js`, `services/portfolioService.js`, `routes/{auth,portfolio}.js`
+- `scripts/hash-password.js` — รันเองเพื่อสร้าง `OWNER_PASSWORD_HASH` ใส่ `.env` (ตอนนี้ยังว่าง ต้องตั้งเอง)
+
+**Gotcha ที่เจอระหว่าง implement:**
+- **dotenv ต้องโหลดบนสุดของ entry point** — เดิมโหลดใน `config/database.js` เท่านั้น แต่ `middleware/auth.js` เช็ค `process.env.JWT_SECRET` ตอน require (ก่อน dotenv โหลด) ทำให้ crash ทันที ต้องมี `require('dotenv').config()` เป็นบรรทัดแรกของ `server.js`
+- **Sequelize + custom timestamp column ไม่ translate ใน order array** — model ตั้ง `createdAt: 'created_at'` (rename column) แต่ `order: [['createdAt','DESC']]` ไม่แปลงเป็น `created_at` ให้ ทำให้ query error `column ... createdAt does not exist` ต้องใช้ชื่อ column จริง (`'created_at'`) ตรงๆ ใน order array แทน
+- **ทดสอบด้วยข้อความไทยผ่าน bash inline command ไม่น่าเชื่อถือ** — เจอ mojibake ตอน curl -d ด้วย string ไทยตรงๆ ใน command แต่พอเขียนเป็นไฟล์ JSON แล้ว curl --data-binary @file กลับได้ข้อมูลถูกต้อง (encoding เพี้ยนที่ชั้น shell ไม่ใช่ bug ของแอป) — เวลาทดสอบข้อมูลภาษาไทยครั้งหน้าให้ใช้ไฟล์เสมอ อย่า inline ใน bash string
+
+### 🟡 ถัดไป (PersonalVault)
+
+1. ตั้ง `OWNER_PASSWORD_HASH` จริงใน `PersonalVault/backend/.env`
+2. Phase 2: จุดเชื่อม LINE — เพิ่ม owner-check + forward HTTP call สั้นๆ ใน Boonyarit's `webhook.js` ไปที่ PersonalVault (ยังไม่แตะ `webhook.js` เลยตอนนี้)
+3. ตาราง Link/Bookmark (ลิงก์เว็บที่ใช้บ่อย) — ยังไม่ออกแบบ
+4. Dashboard frontend — ยังไม่เริ่ม
+5. Deploy จริงบน droplet (คนละ port + Caddy path ใหม่) — ตอนนี้รันแค่ local
 
 ### 🟡 ถัดไป
 
