@@ -285,19 +285,62 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
 - **Sequelize + custom timestamp column ไม่ translate ใน order array** — model ตั้ง `createdAt: 'created_at'` (rename column) แต่ `order: [['createdAt','DESC']]` ไม่แปลงเป็น `created_at` ให้ ทำให้ query error `column ... createdAt does not exist` ต้องใช้ชื่อ column จริง (`'created_at'`) ตรงๆ ใน order array แทน
 - **ทดสอบด้วยข้อความไทยผ่าน bash inline command ไม่น่าเชื่อถือ** — เจอ mojibake ตอน curl -d ด้วย string ไทยตรงๆ ใน command แต่พอเขียนเป็นไฟล์ JSON แล้ว curl --data-binary @file กลับได้ข้อมูลถูกต้อง (encoding เพี้ยนที่ชั้น shell ไม่ใช่ bug ของแอป) — เวลาทดสอบข้อมูลภาษาไทยครั้งหน้าให้ใช้ไฟล์เสมอ อย่า inline ใน bash string
 
+### ✅ Session 12 — Merge งานค้าง + ฟีเจอร์ตรวจสอบการโอนเงิน (OCR) + PersonalVault setup (8 ก.ค. 69)
+
+**⚠️ สถานะ ณ ตอนจบ session — ยังไม่ commit/push งานใหญ่ 2 ก้อน ต้องทำต่อ session หน้า:**
+1. **ยังไม่ push ขึ้น origin** — local นำหน้าอยู่ 4 commits (merge commit `9c07634` + Pattern 2 migration + docs เก่า)
+2. **มีงานค้างไม่ commit อีกก้อนใหญ่** (10 ไฟล์ — ดูรายละเอียดด้านล่าง "ฟีเจอร์ตรวจสอบการโอนเงิน")
+
+**Merge งานจากเครื่องอื่น:**
+- Commit Pattern 2 migration ที่ค้างมาตั้งแต่ session 9 (ไม่เคย commit จริง) + merge commits จากเครื่องอื่น (retheme, ระบบรหัสผ่าน, sidebar redesign, คำสั่ง "สรุปเลย") — merge ผ่านอัตโนมัติเกือบหมด conflict แค่ CLAUDE.md (เก็บทั้ง 2 ฝั่งไว้)
+- ดึง `gcs-key.json` จริงจาก production มาใส่ local — แก้ปัญหารูปไม่ขึ้นหลัง Pattern 2 migration (ตอนนี้ local dev ต้องมี key นี้ถึงจะเห็นรูป เพราะไม่มี URL สำรองใน DB แล้ว)
+- เจอ + แก้ปัญหา process ค้าง/port ชนหลายรอบระหว่างทดสอบ (ของ Claude เองไปชนกับ dev server ของ user) — บทเรียน: **เช็ค port ว่างก่อนรัน dev server ทดสอบเองทุกครั้ง**
+
+**เพิ่มหมายเหตุใน bot reply (คำสั่งค้นหา/สรุป):**
+- `webhook.js` — เพิ่ม `BOT_COMMAND_NOTICE` แปะท้าย reply ทุกกรณีของคำสั่งค้นหา/สรุป (8 จุด) แจ้งผู้ใช้ว่าคำสั่ง+คำตอบนี้จะไม่ถูกบันทึกในคลังแชท (กันเข้าใจผิดว่าข้อความหาย — root cause ของเคส "ข้อความสรุปเลยหายไป" ที่ไล่เจอใน session นี้)
+
+**🆕 ฟีเจอร์ตรวจสอบการโอน-จ่ายเงิน (OCR) — สร้างเสร็จ ทดสอบ logic/DB/API ผ่านแล้ว แต่ยังไม่ commit:**
+- แนวคิด: เจ้าหน้าที่ส่งรูป 2 ใบติดกัน (รายงานตั้งเบิกจาก ERP ภายใน + สกรีนช็อตธนาคาร เช่น K BIZ) เข้ากลุ่ม LINE ที่ติดธงไว้เฉพาะ → AI vision อ่านทั้ง 2 รูป จับคู่ยอด → ตอบกลับใน LINE ทันที + เก็บ ledger ไว้ดูย้อนหลังใน Dashboard
+- **ตัดสินใจสถาปัตยกรรมสำคัญ**: ไม่เชื่อม CorePlan ERP database ตรง (ใช้ OCR รูปแทน) + เก็บ ledger ใน **schema แยก `payment_verification`** (Postgres instance เดียวกับ Boonyarit แต่คนละ schema จาก `public` — เหมือน pattern PersonalVault) + จำกัดสิทธิ์ดู Dashboard เฉพาะ role `superuser` เท่านั้น (staff ที่มีสิทธิ์เห็นกลุ่มปกติผ่าน AdminGroup ไม่เห็นหน้านี้)
+- ไฟล์ใหม่: `backend/models/PaymentVerification.js`, `backend/routes/paymentVerification.js`, `frontend/src/api/paymentVerification.js`, `frontend/src/pages/PaymentVerificationPage.{jsx,css}`
+- ไฟล์แก้: `Group.js` (+`isPaymentVerifyGroup`), `models/index.js`, `routes/groups.js` (+toggle endpoint), `routes/webhook.js` (routing + buffer 2 รูป), `services/aiService.js` (+vision extraction + matching), `server.js` (+create schema), `App.jsx`/`Sidebar.jsx`/`AdminPanel.jsx` (UI)
+- **บั๊กที่เจอ+แก้ระหว่างทดสอบจริง (สำคัญ อย่าลืม):**
+  1. Matching logic เดิมเทียบแค่รายการเงินออก — พลาดรายการที่เป็นเงินเข้า (เช่น "ขอยืมผู้การ") ที่อยู่ในตารางตั้งเบิกเหมือนกัน แก้ให้เทียบทุกทิศทาง
+  2. Sequelize สร้าง FK constraint ข้าม schema ผิด (`PaymentVerification.belongsTo(Group, ...)` พอ Group อยู่คนละ schema ทำให้ auto-FK อ้าง schema ผิด) — แก้ด้วย `constraints: false` ใน association
+  3. `sync({})` ไม่ ALTER ตาราง `Groups` เดิมให้มีคอลัมน์ใหม่ — ต้องรัน `ALTER TABLE "Groups" ADD COLUMN ...` มือ (รันไปแล้วบน DB จริงที่ Boonyarit ใช้ร่วมกับ production — **DB มีคอลัมน์ใหม่แล้วแม้โค้ดยังไม่ push**)
+- ทดสอบแล้ว: matching logic (ข้อมูลจริงจากรูปที่ user ส่งมา, 6/6 ตรง), AI vision pipeline (Gemini fail → fallback Groq สำเร็จ), DB CRUD ข้าม schema, API login+auth+toggle ผ่าน HTTP จริง, frontend build ผ่าน
+- **ยังไม่ทดสอบ**: ส่งรูปจริงผ่าน LINE เข้ากลุ่มที่ติดธงจริง (ต้องเปิดธงกลุ่มทดสอบก่อนแล้วลองส่งจริง)
+
+**⚠️ Gemini API key โควต้า = 0 (ไม่ใช่ใช้หมด แต่ไม่เคยได้ free tier เลย):**
+- ทดสอบแล้วพบว่า Google Cloud project ที่สร้าง key นี้ไม่มี free tier quota เลยสักนิด (`limit: 0` ทั้ง input token / request ต่อนาที / ต่อวัน) — ไม่เกี่ยวกับปริมาณการใช้งาน
+- สาเหตุที่พบบ่อย: ต้องผูก billing account เข้า Google Cloud project ก่อนถึงจะปลดล็อก free tier (Google เปลี่ยนนโยบาย) — ต้องเข้า https://aistudio.google.com/apikey เช็คว่า project ไหนสร้าง key นี้แล้วผูก billing
+- ไม่กระทบการใช้งานตอนนี้เพราะ fallback ไป Groq ทำงานได้สมบูรณ์ (ทั้งฟีเจอร์สรุปแชทเดิม + ตรวจสอบเงินใหม่) แต่ถ้า Groq มีปัญหาจะไม่มีตัวสำรอง
+
+### ✅ PersonalVault อัปเดต (8 ก.ค. 69, session 12)
+
+- **Git repo สร้างแล้ว + push ขึ้น GitHub แล้ว**: `github.com/veetavee-ops/PersonalVault` branch `main` (commit `b46a110` Phase 1 + `d32ecd9` เพิ่ม CLAUDE.md ของตัวเอง) — ก่อนหน้านี้ไม่มี git repo เลย เสี่ยงงานหายมาตลอด แก้แล้ว
+- **`OWNER_PASSWORD_HASH` ตั้งค่าจริงแล้ว** ทดสอบ login ผ่าน (`kpp2231`)
+- **สร้าง `PersonalVault/backend/CLAUDE.md` ของตัวเอง** — บันทึกสถาปัตยกรรม + ขอบเขตที่ตกลงกันไว้ (ห้ามรวม repo กับ Boonyarit, ห้ามทำ password manager, ห้ามสร้าง LINE bot แยก, ห้าม multi-user) กัน session ในอนาคตที่เปิดตรง PersonalVault โดยตรงหลงแผน — **อ่านไฟล์นั้นก่อนแตะ PersonalVault เสมอ**
+- ⚠️ พบว่า DB password (Neon) เคยหลุดโชว์ใน terminal ระหว่าง debug ช่วงแรกๆ — ยังไม่ได้ rotate
+
 ### 🟡 ถัดไป (PersonalVault)
 
-1. ตั้ง `OWNER_PASSWORD_HASH` จริงใน `PersonalVault/backend/.env`
-2. Phase 2: จุดเชื่อม LINE — เพิ่ม owner-check + forward HTTP call สั้นๆ ใน Boonyarit's `webhook.js` ไปที่ PersonalVault (ยังไม่แตะ `webhook.js` เลยตอนนี้)
-3. ตาราง Link/Bookmark (ลิงก์เว็บที่ใช้บ่อย) — ยังไม่ออกแบบ
-4. Dashboard frontend — ยังไม่เริ่ม
-5. Deploy จริงบน droplet (คนละ port + Caddy path ใหม่) — ตอนนี้รันแค่ local
+1. Phase 2: จุดเชื่อม LINE — เพิ่ม owner-check + forward HTTP call สั้นๆ ใน Boonyarit's `webhook.js` ไปที่ PersonalVault (ยังไม่แตะ `webhook.js` เลยตอนนี้) — คุยกันแล้วว่า Boonyarit ควร OCR ให้เสร็จก่อนแล้วส่งข้อมูลที่แกะแล้ว (ไม่ใช่รูปดิบ) ไปให้ PSV บันทึก แต่ยังไม่ได้ตกลง syntax คำสั่งและ auth ระหว่าง service
+2. ตาราง Link/Bookmark (ลิงก์เว็บที่ใช้บ่อย) — ยังไม่ออกแบบ
+3. Dashboard frontend — ยังไม่เริ่ม
+4. Deploy จริงบน droplet (คนละ port + Caddy path ใหม่) — ตอนนี้รันแค่ local
+5. Rotate Neon DB password (ดู gotcha ด้านบน)
 
 ### 🟡 ถัดไป
 
-1. **tax-ocr Drive cleanup** — ลบ CLAUDE.md 4 อัน (keep `1BUdruo8dnxxXibPUNCegEoJiraxujWAo`) + ลบ .env 2 อัน (keep `1e2288av9H0RRX2yjgMyhxXCIIfAWGDha`) รอ user confirm
-2. **root misplaced files** — `gdrive.md` + `start.md` ในรากของ Drive ควรย้ายเข้า `_claude-skills` หรือปล่อยไว้ รอ user confirm
-3. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`
+1. **🔴 commit งานฟีเจอร์ตรวจสอบการโอนเงิน (OCR) ที่ค้างอยู่ใน working tree** — 10 ไฟล์ (ดูรายละเอียด session 12) ยังไม่ commit เลย ก่อน commit ให้เช็คว่าอยากแยกเป็นหลาย commit ไหม (BOT_COMMAND_NOTICE เป็นคนละเรื่องกับฟีเจอร์ OCR ปนอยู่ใน `webhook.js` ไฟล์เดียวกัน)
+2. **🔴 push ขึ้น origin** — local นำหน้าอยู่ 4 commits ยังไม่ขึ้น GitHub เลย (รวม Pattern 2 migration ที่ค้างมาตั้งแต่ session 9)
+3. **ทดสอบฟีเจอร์ตรวจสอบการโอนเงินกับรูปจริงผ่าน LINE** — เปิดธง `isPaymentVerifyGroup` ให้กลุ่มทดสอบก่อน แล้วลองส่ง 2 รูปจริง (ยังทดสอบแค่ logic/DB/API ผ่าน HTTP เท่านั้น ยังไม่เคยทดสอบผ่าน LINE จริง)
+4. **แก้ Gemini API billing** — เข้า https://aistudio.google.com/apikey เช็ค project ที่สร้าง key แล้วผูก billing account ให้ปลดล็อก free tier (ตอนนี้ระบบพึ่ง Groq เป็นหลักอย่างเดียว)
+5. **SMTP สำหรับฟีเจอร์ลืมรหัสผ่าน** — ยังไม่ได้ตั้งค่า รอ Gmail + App Password จากคุณ (พักไว้ตั้งแต่ต้น session ยังไม่กลับมาทำ)
+6. **tax-ocr Drive cleanup** — ลบ CLAUDE.md 4 อัน (keep `1BUdruo8dnxxXibPUNCegEoJiraxujWAo`) + ลบ .env 2 อัน (keep `1e2288av9H0RRX2yjgMyhxXCIIfAWGDha`) รอ user confirm
+7. **root misplaced files** — `gdrive.md` + `start.md` ในรากของ Drive ควรย้ายเข้า `_claude-skills` หรือปล่อยไว้ รอ user confirm
+8. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`
 
 ### 🔑 docker compose restart ไม่โหลด .env ใหม่
 
@@ -339,3 +382,12 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
 >
 > ข้อยกเว้น: ใช้ Bash รัน dev server เองได้เฉพาะตอนต้องทดสอบ backend ชั่วคราว
 > ผ่าน curl (เช่น debug API ตรงๆ) และต้อง**ปิดทิ้งทันที**หลังทดสอบเสร็จ ไม่ปล่อยค้าง
+
+### 🔑 Sequelize model ข้าม schema ห้ามใช้ association ปกติ
+
+> ถ้า model ใหม่ตั้ง `schema: 'xxx'` แยกจาก `public` แต่ต้อง `belongsTo`/`hasMany`
+> กับ model ใน schema อื่น (เช่น `PaymentVerification` → `Group`) **ต้องใส่
+> `constraints: false`** ใน association เสมอ ไม่งั้น Sequelize sync() จะสร้าง
+> FK constraint ที่ qualify schemaผิด (อ้าง schema ของตัวเองแทนที่จะเป็น schema
+> ของตารางปลายทาง) ทำให้ `CREATE TABLE` fail ทั้งก้อน — join ตอน query ยังทำงาน
+> ปกติแม้ปิด constraint (แค่ไม่มี FK บังคับระดับ DB เท่านั้น)
