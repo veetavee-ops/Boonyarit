@@ -3,6 +3,7 @@ import { fetchUsers, createUser, updateUserLineId, deleteUser, assignGroupToUser
 import { fetchGroups } from '../api/messages';
 import { fetchLineUsers, toggleLineUserSearch } from '../api/lineUsers';
 import { fetchSettings, updateSetting } from '../api/settings';
+import { toggleGroupPaymentVerify } from '../api/paymentVerification';
 import './AdminPanel.css';
 
 export default function AdminPanel() {
@@ -91,6 +92,17 @@ export default function AdminPanel() {
       setError('อัปเดตคำสั่งสรุปไม่สำเร็จ');
     } finally {
       setSummarizeKeywordSaving(false);
+    }
+  };
+
+  const handleTogglePaymentVerify = async (groupId, current) => {
+    try {
+      await toggleGroupPaymentVerify(groupId, !current);
+      setGroups((prev) =>
+        prev.map((g) => g.groupId === groupId ? { ...g, isPaymentVerifyGroup: !current } : g)
+      );
+    } catch (err) {
+      setError('อัปเดตกลุ่มตรวจสอบการเงินไม่สำเร็จ');
     }
   };
 
@@ -364,6 +376,30 @@ export default function AdminPanel() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* ── กลุ่มตรวจสอบการโอน-จ่ายเงิน (OCR) ── */}
+      <div className="ap-card ap-settings-card">
+        <h2 className="ap-card-title">กลุ่มตรวจสอบการโอนเงิน (OCR)</h2>
+        <p className="ap-note">
+          เปิดเฉพาะกลุ่มที่จะให้เจ้าหน้าที่ส่งรูป "รายงานตั้งเบิก" + "สกรีนธนาคาร" 2 รูปติดกัน
+          เพื่อให้ AI ตรวจสอบยอดอัตโนมัติ — กลุ่มอื่นที่ไม่เปิดจะไม่ถูกแตะต้องเลย
+        </p>
+        <ul className="ap-group-list">
+          {groups.map((g) => (
+            <li key={g.groupId} className="ap-group-item">
+              <div className="ap-setting-row">
+                <span>{g.groupName}</span>
+                <button
+                  className={`ap-toggle${g.isPaymentVerifyGroup ? ' ap-toggle--on' : ''}`}
+                  onClick={() => handleTogglePaymentVerify(g.groupId, g.isPaymentVerifyGroup)}
+                >
+                  {g.isPaymentVerifyGroup ? 'เปิดอยู่' : 'ปิดอยู่'}
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
       </div>
 
       {/* ── LINE Users: จัดการสิทธิ์ค้นหาผ่าน bot ── */}

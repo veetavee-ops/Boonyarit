@@ -9,6 +9,7 @@ import RegisterPage from "./pages/RegisterPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import DriveFilesPage from "./pages/DriveFilesPage";
+import PaymentVerificationPage from "./pages/PaymentVerificationPage";
 import DashboardPage from "./pages/DashboardPage";
 import AdminPanel from "./pages/AdminPanel";
 import Sidebar from "./components/Sidebar/Sidebar";
@@ -39,6 +40,7 @@ export default function App() {
 
   const [showDaySummary, setShowDaySummary] = useState(false);
   const [showDriveFiles, setShowDriveFiles] = useState(false);
+  const [showPaymentVerification, setShowPaymentVerification] = useState(false);
   const [daySummary, setDaySummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState(null);
@@ -402,6 +404,7 @@ export default function App() {
             closeSidebar();
           }}
           onOpenDriveFiles={() => setShowDriveFiles(true)}
+          onOpenPaymentVerification={admin?.role === 'superuser' ? () => setShowPaymentVerification(true) : undefined}
           onPinChange={setPinnedSidebarWidth}
         />
         <SummarySidebar
@@ -429,6 +432,10 @@ export default function App() {
 
       {showDriveFiles && (
         <DriveFilesPage onClose={() => setShowDriveFiles(false)} />
+      )}
+
+      {showPaymentVerification && (
+        <PaymentVerificationPage onClose={() => setShowPaymentVerification(false)} />
       )}
 
       {/* modal เปลี่ยนรหัสผ่าน — เด้งขึ้นมาก็ต่อเมื่อ showChangePassword เป็น true เท่านั้น */}

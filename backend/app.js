@@ -20,6 +20,7 @@ const labelsRoute = require('./routes/labels');
 const usersRoute = require('./routes/users');
 const lineUsersRoute = require('./routes/lineUsers');
 const settingsRoute = require('./routes/settings');
+const paymentVerificationRoute = require('./routes/paymentVerification');
 
 // module สำหรับเปลี่ยนรหัสผ่าน + ลืมรหัสผ่าน (ส่งลิงก์ทาง email) — ดูรายละเอียดใน modules/passwordAuth/index.js
 const { createPasswordAuthRouter } = require('./modules/passwordAuth');
@@ -97,6 +98,7 @@ app.use('/api/labels', labelsRoute);
 app.use('/api/users', usersRoute);
 app.use('/api/line-users', lineUsersRoute);
 app.use('/api/settings', settingsRoute);
+app.use('/api/payment-verification', paymentVerificationRoute);
 
 
 // ===== Serve Frontend (SPA) =====

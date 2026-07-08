@@ -3,13 +3,13 @@ const router = express.Router();
 const line = require('@line/bot-sdk');
 const { Op } = require('sequelize');
 
-const { Message, User, Group, Setting, Admin, AdminGroup } = require('../models/index');
+const { Message, User, Group, Setting, Admin, AdminGroup, PaymentVerification } = require('../models/index');
 const { getProfile, client } = require('../services/lineService');
 const { uploadToGCS, buildGCSPath } = require('../services/gcsService');
 
 const { ensureGroupFolder, uploadFileToDrive } = require('../services/driveService');
 const { alertError } = require('../services/notifyService');
-const { summarizeAllChatsForDate } = require('../services/aiService');
+const { summarizeAllChatsForDate, extractPaymentDocuments, matchPaymentItems } = require('../services/aiService');
 
 // ถ้าคนส่งข้อความนี้ผูก LINE ID กับบัญชี admin ไว้ (เมนู "ตั้งค่าบัญชี")
 // ให้สิทธิ์เข้าถึงกลุ่ม/DM นี้ให้อัตโนมัติทันที — ไม่ต้องรอผูก LINE ID ใหม่หรือให้ superadmin ไปติ๊กเพิ่มเอง
@@ -76,6 +76,11 @@ async function downloadAsBuffer(messageId) {
 const pendingImageGroups = new Map();
 const IMAGE_GROUP_TIMEOUT = 5000; // 5 seconds
 
+// Payment verification image pairing — คนละ buffer จาก pendingImageGroups เพราะไม่บันทึกเป็น Message ปกติ
+// รอรูปครบ 2 รูปจากคนเดียวกันในกลุ่มที่ติดธง isPaymentVerifyGroup แล้วส่งเข้า AI vision ตรวจสอบ
+const pendingPaymentImages = new Map();
+const PAYMENT_IMAGE_TIMEOUT = 8000; // 8 วิ — ให้เวลามากกว่าปกตินิดหน่อยเพราะรอครบ 2 รูปเป๊ะ
+
 /**
  * LINE Webhook endpoint
  */
@@ -94,6 +99,10 @@ router.post('/', webhookMiddleware, async (req, res) => {
 });
 
 
+// คำสั่งค้นหา/สรุป ไม่ถูกบันทึกลง DB (ดู handleEvent — return ก่อนถึงจุดบันทึกข้อความ)
+// แปะหมายเหตุนี้ท้าย reply ทุกครั้ง กันผู้ใช้เข้าใจผิดว่าข้อความหาย
+const BOT_COMMAND_NOTICE = '\n\n─────────\n💡 คำสั่งนี้และคำตอบนี้จะไม่ถูกบันทึกในคลังแชท';
+
 // ─── ค้นหาไฟล์ผ่าน LINE — ใช้ได้ทั้งใน DM และในกลุ่ม ─────────────────────────
 // DM: ค้นหาข้ามทุกกลุ่มที่ user เป็นสมาชิก (ต้องมี canSearch หรือเป็น admin ที่ผูก LINE ID)
 // กลุ่ม: ค้นหาเฉพาะไฟล์ในกลุ่มนั้นเท่านั้น (กันข้อมูลข้ามกลุ่มหลุดไปให้คนอื่นเห็นกลางกลุ่ม)
@@ -109,7 +118,7 @@ async function handleSearchCommand(event, userId, groupId, sourceType, keyword) 
         if (sourceType === 'group') return;
         await client.replyMessage(replyToken, {
             type: 'text',
-            text: `🤖 วิธีใช้งาน\n\nพิมพ์: ${keyword} <ชื่อไฟล์>\n\nตัวอย่าง:\n• ${keyword} สัญญา\n• ${keyword} .pdf\n• ${keyword} ใบเสนอราคา\n\nจะแสดงผลสูงสุด 5 รายการล่าสุด`
+            text: `🤖 วิธีใช้งาน\n\nพิมพ์: ${keyword} <ชื่อไฟล์>\n\nตัวอย่าง:\n• ${keyword} สัญญา\n• ${keyword} .pdf\n• ${keyword} ใบเสนอราคา\n\nจะแสดงผลสูงสุด 5 รายการล่าสุด${BOT_COMMAND_NOTICE}`
         }).catch(e => console.error('[Search] replyMessage error:', e.message));
         return;
     }
@@ -139,7 +148,7 @@ async function handleSearchCommand(event, userId, groupId, sourceType, keyword) 
         if (groupIds.length === 0) {
             await client.replyMessage(replyToken, {
                 type: 'text',
-                text: `🔍 ไม่พบไฟล์ที่ชื่อมี "${searchKeyword}"\n\n(ไม่พบกลุ่มที่คุณเป็นสมาชิก)`
+                text: `🔍 ไม่พบไฟล์ที่ชื่อมี "${searchKeyword}"\n\n(ไม่พบกลุ่มที่คุณเป็นสมาชิก)${BOT_COMMAND_NOTICE}`
             }).catch(() => {});
             return;
         }
@@ -161,7 +170,7 @@ async function handleSearchCommand(event, userId, groupId, sourceType, keyword) 
         if (results.length === 0) {
             await client.replyMessage(replyToken, {
                 type: 'text',
-                text: `🔍 ไม่พบไฟล์ที่ชื่อมี "${searchKeyword}"\n\nลองคำค้นอื่นดูครับ`
+                text: `🔍 ไม่พบไฟล์ที่ชื่อมี "${searchKeyword}"\n\nลองคำค้นอื่นดูครับ${BOT_COMMAND_NOTICE}`
             }).catch(() => {});
             return;
         }
@@ -186,12 +195,12 @@ async function handleSearchCommand(event, userId, groupId, sourceType, keyword) 
         });
 
         console.log('[Search] replying with', results.length, 'results');
-        await client.replyMessage(replyToken, { type: 'text', text: reply.trim() }).catch(e => console.error('[Search] replyMessage error:', e.message));
+        await client.replyMessage(replyToken, { type: 'text', text: reply.trim() + BOT_COMMAND_NOTICE }).catch(e => console.error('[Search] replyMessage error:', e.message));
     } catch (err) {
         console.error('[Search Error]', err.message);
         await client.replyMessage(replyToken, {
             type: 'text',
-            text: '❌ เกิดข้อผิดพลาดในการค้นหา กรุณาลองใหม่'
+            text: '❌ เกิดข้อผิดพลาดในการค้นหา กรุณาลองใหม่' + BOT_COMMAND_NOTICE
         }).catch(e => console.error('[Search] replyMessage error:', e.message));
     }
 }
@@ -238,7 +247,7 @@ async function handleSummarizeCommand(event, userId, groupId, sourceType, daysBa
             });
             const groupIds = userGroups.map((m) => m.groupId);
             if (groupIds.length === 0) {
-                await client.replyMessage(replyToken, { type: 'text', text: '📋 ไม่พบกลุ่มที่คุณเป็นสมาชิกครับ' }).catch(() => {});
+                await client.replyMessage(replyToken, { type: 'text', text: '📋 ไม่พบกลุ่มที่คุณเป็นสมาชิกครับ' + BOT_COMMAND_NOTICE }).catch(() => {});
                 return;
             }
             where.groupId = { [Op.in]: groupIds };
@@ -256,7 +265,7 @@ async function handleSummarizeCommand(event, userId, groupId, sourceType, daysBa
 
         if (messages.length === 0) {
             const label = daysBack ? `ย้อนหลัง ${daysBack} วัน` : 'วันนี้';
-            await client.replyMessage(replyToken, { type: 'text', text: `📋 ${label}ยังไม่มีข้อความให้สรุปครับ` }).catch(() => {});
+            await client.replyMessage(replyToken, { type: 'text', text: `📋 ${label}ยังไม่มีข้อความให้สรุปครับ` + BOT_COMMAND_NOTICE }).catch(() => {});
             return;
         }
 
@@ -264,13 +273,13 @@ async function handleSummarizeCommand(event, userId, groupId, sourceType, daysBa
         const rangeLabel = daysBack ? `ย้อนหลัง ${daysBack} วัน` : 'วันนี้';
         const reply = `📋 สรุปแชท${rangeLabel} (${result.messageCount} ข้อความ)\n\n${result.summary}`;
 
-        await client.replyMessage(replyToken, { type: 'text', text: truncateForLine(reply) })
+        await client.replyMessage(replyToken, { type: 'text', text: truncateForLine(reply) + BOT_COMMAND_NOTICE })
             .catch(e => console.error('[Summarize] replyMessage error:', e.message));
     } catch (err) {
         console.error('[Summarize Error]', err.message);
         await client.replyMessage(replyToken, {
             type: 'text',
-            text: '❌ สรุปแชทไม่สำเร็จ กรุณาลองใหม่'
+            text: '❌ สรุปแชทไม่สำเร็จ กรุณาลองใหม่' + BOT_COMMAND_NOTICE
         }).catch(e => console.error('[Summarize] replyMessage error:', e.message));
     }
 }
@@ -378,6 +387,15 @@ async function handleEvent(event, io) {
 // ─── Image Message — grouped then uploaded to GCS + Drive ─────────────────────
 async function handleImageMessage(event, userId, groupId, sourceType, message, io, folderName) {
     const groupKey = `${userId}-${groupId || 'private'}`;
+
+    // กลุ่มที่ติดธง isPaymentVerifyGroup — รูปที่ส่งเข้ามาไม่บันทึกเป็นแชทปกติ
+    // แต่รอครบ 2 รูปแล้วส่งให้ AI vision ตรวจสอบรายงานตั้งเบิก vs สลิปธนาคาร
+    if (sourceType === 'group' && groupId) {
+        const group = await Group.findByPk(groupId);
+        if (group?.isPaymentVerifyGroup) {
+            return await handlePaymentVerifyImage(event, userId, groupId, message, io, groupKey);
+        }
+    }
 
     let senderName = 'unknown';
     try {
@@ -497,6 +515,102 @@ async function saveImageGroup(groupKey, io) {
         } catch (e) {}
     } finally {
         pendingImageGroups.delete(groupKey);
+    }
+}
+
+// ─── Payment Verification — รอรูปครบ 2 รูปจากคนเดียวกัน แล้วส่งตรวจสอบ ──────────
+async function handlePaymentVerifyImage(event, userId, groupId, message, io, groupKey) {
+    const buffer = await downloadAsBuffer(message.id);
+    const imageData = { lineMessageId: message.id, buffer, timestamp: new Date(event.timestamp) };
+    const replyToken = event.replyToken;
+
+    if (pendingPaymentImages.has(groupKey)) {
+        const pending = pendingPaymentImages.get(groupKey);
+        clearTimeout(pending.timer);
+        pending.images.push(imageData);
+
+        if (pending.images.length >= 2) {
+            pendingPaymentImages.delete(groupKey);
+            await processPaymentVerification(groupId, userId, pending.images.slice(0, 2), replyToken, io);
+            return;
+        }
+        pending.timer = setTimeout(() => handlePaymentVerifyTimeout(groupKey), PAYMENT_IMAGE_TIMEOUT);
+    } else {
+        pendingPaymentImages.set(groupKey, {
+            images: [imageData],
+            replyToken,
+            timer: setTimeout(() => handlePaymentVerifyTimeout(groupKey), PAYMENT_IMAGE_TIMEOUT),
+        });
+    }
+}
+
+// ครบเวลาแต่ยังไม่ครบ 2 รูป — แจ้งเตือนแล้วทิ้ง (กันรอเก้อไม่มีสิ้นสุด)
+async function handlePaymentVerifyTimeout(groupKey) {
+    const pending = pendingPaymentImages.get(groupKey);
+    pendingPaymentImages.delete(groupKey);
+    if (!pending) return;
+    await client.replyMessage(pending.replyToken, {
+        type: 'text',
+        text: `⚠️ ได้รับรูปแค่ ${pending.images.length} รูป (ต้องการ 2 รูป: รายงานตั้งเบิก + สกรีนธนาคาร)\nกรุณาส่งรูปทั้ง 2 ใบใหม่ติดกันครับ`,
+    }).catch(() => {});
+}
+
+async function processPaymentVerification(groupId, userId, images, replyToken, io) {
+    try {
+        const extracted = await extractPaymentDocuments(images[0].buffer, images[1].buffer);
+        const { matchResults, overallStatus } = matchPaymentItems(extracted.reportItems, extracted.bankItems);
+
+        // เก็บรูปแยกตามประเภทที่ AI classify ไว้ (imageAType/imageBType อ้างอิงลำดับ images[0]/images[1])
+        const reportBuffer = extracted.imageAType === 'requisition_report' ? images[0].buffer : images[1].buffer;
+        const bankBuffer = extracted.imageAType === 'bank_statement' ? images[0].buffer : images[1].buffer;
+
+        let reportImagePath = null, bankImagePath = null;
+        try {
+            reportImagePath = buildGCSPath(images[0].lineMessageId + '-report', '.jpg', 'payment-verify');
+            await uploadToGCS(reportBuffer, reportImagePath, '.jpg');
+            bankImagePath = buildGCSPath(images[1].lineMessageId + '-bank', '.jpg', 'payment-verify');
+            await uploadToGCS(bankBuffer, bankImagePath, '.jpg');
+        } catch (e) {
+            console.error('❌ Payment verify image GCS fail:', e.message);
+        }
+
+        await PaymentVerification.create({
+            groupId,
+            submittedBy: userId,
+            submittedAt: new Date(),
+            reportImagePath,
+            bankImagePath,
+            reportItems: extracted.reportItems,
+            bankItems: extracted.bankItems,
+            matchResults,
+            overallStatus,
+            endingBalance: extracted.bankEndingBalance,
+        });
+
+        const total = extracted.reportItems.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+        if (overallStatus === 'matched') {
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: `✅ ตรวจสอบแล้ว: ตรงกันครบ ${extracted.reportItems.length} รายการ (${total.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท)`,
+            }).catch(() => {});
+        } else {
+            const problems = matchResults.filter(m => m.status !== 'matched');
+            const lines = problems.slice(0, 5).map(m => {
+                if (m.status === 'not_found_in_bank') return `• ${m.reportItem.payee} ${Number(m.reportItem.amount).toLocaleString('th-TH')} บาท — ไม่พบในรายการโอนจริง`;
+                return `• ${m.bankItem.counterName || '(ไม่ทราบชื่อ)'} ${Number(m.bankItem.amount).toLocaleString('th-TH')} บาท — มีรายการโอนที่ไม่ตรงกับตั้งเบิก`;
+            }).join('\n');
+            await client.replyMessage(replyToken, {
+                type: 'text',
+                text: `⚠️ พบรายการไม่ตรง ${problems.length} รายการ\n${lines}\n\nเข้าตรวจสอบ/แก้ไขได้ที่ Dashboard`,
+            }).catch(() => {});
+        }
+    } catch (err) {
+        console.error('❌ Payment Verification Error:', err.message);
+        alertError('Payment Verification', err.message);
+        await client.replyMessage(replyToken, {
+            type: 'text',
+            text: '❌ ตรวจสอบรายการไม่สำเร็จ (อ่านรูปไม่ได้) กรุณาลองส่งรูปใหม่อีกครั้ง',
+        }).catch(() => {});
     }
 }
 

@@ -4,6 +4,7 @@ const axios = require('axios');
 // ── Groq ────────────────────────────────────────────────────────────────────
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
+const GROQ_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct'; // ต้อง vision-capable — เช็ค model ล่าสุดที่ console.groq.com ถ้า error "model not found"
 const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions';
 
 // ── Gemini ──────────────────────────────────────────────────────────────────
@@ -240,4 +241,195 @@ async function summarizeAllChatsForDate(allMessages, provider = 'groq') {
   }
 }
 
-module.exports = { summarizeAllChatsForDate };
+// ── Vision: เรียก Gemini อ่านรูป ─────────────────────────────────────────────
+async function callGeminiVision(prompt, imageBuffers) {
+  if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY ยังไม่ได้ตั้งค่าใน .env');
+
+  const parts = [
+    { text: prompt },
+    ...imageBuffers.map(buf => ({
+      inlineData: { mimeType: 'image/jpeg', data: buf.toString('base64') },
+    })),
+  ];
+
+  try {
+    const response = await axios.post(
+      `${GEMINI_API}?key=${GEMINI_API_KEY}`,
+      {
+        contents: [{ role: 'user', parts }],
+        generationConfig: { maxOutputTokens: 4096, temperature: 0.1 },
+      },
+      { headers: { 'Content-Type': 'application/json' } }
+    );
+
+    return {
+      text: response.data.candidates[0].content.parts[0].text,
+      modelLabel: `Gemini ${GEMINI_MODEL} (vision)`,
+    };
+  } catch (err) {
+    const status = err.response?.status;
+    const msg = err.response?.data?.error?.message || err.message;
+    console.error(`❌ Gemini Vision API error [${status}]:`, msg);
+    throw err;
+  }
+}
+
+// ── Vision: เรียก Groq อ่านรูป (fallback) ────────────────────────────────────
+async function callGroqVision(prompt, imageBuffers) {
+  if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY ยังไม่ได้ตั้งค่าใน .env');
+
+  const content = [
+    { type: 'text', text: prompt },
+    ...imageBuffers.map(buf => ({
+      type: 'image_url',
+      image_url: { url: `data:image/jpeg;base64,${buf.toString('base64')}` },
+    })),
+  ];
+
+  const response = await axios.post(
+    GROQ_API,
+    {
+      model: GROQ_VISION_MODEL,
+      messages: [{ role: 'user', content }],
+      max_tokens: 4096,
+      temperature: 0.1,
+    },
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${GROQ_API_KEY}`,
+      },
+    }
+  );
+
+  return {
+    text: response.data.choices[0].message.content,
+    modelLabel: 'Llama 4 Scout (Groq vision)',
+  };
+}
+
+// ── Helper: ตัด markdown code fence ที่โมเดลชอบแถมมาออกก่อน JSON.parse ──────
+function parseJsonFromModel(text) {
+  const cleaned = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/i, '').trim();
+  return JSON.parse(cleaned);
+}
+
+// ── Vision: อ่านรูป "รายงานตั้งเบิก" + "สกรีนธนาคาร" พร้อมกัน แล้วแกะเป็น JSON ──
+// ไม่ต้องพึ่งลำดับการส่ง (ใครมาก่อน) — ให้ AI classify ประเภทของแต่ละรูปเองในตัว prompt เดียวกัน
+async function extractPaymentDocuments(imageBufferA, imageBufferB) {
+  const prompt = `คุณเป็นผู้ช่วยตรวจสอบเอกสารการเงิน จะได้รับรูป 2 รูป เรียกว่า "ภาพ A" (รูปแรก) และ "ภาพ B" (รูปสอง) ไม่เรียงลำดับตายตัวว่าใบไหนคือรายงานหรือสกรีนธนาคาร ซึ่งเป็น:
+1. "รายงานตั้งเบิกเงิน" — ตารางรายการที่ต้องจ่าย/โอน มีคอลัมน์ ผู้รับเงิน, เลขบัญชี/ธนาคาร, ยอดรวม, รหัสงาน
+2. "สกรีนช็อตธนาคาร" (เช่น K BIZ) — ประวัติการโอนเงินจริง มีรายการ โอนเงิน/รับโอนเงิน พร้อมยอดและยอดคงเหลือในบัญชี
+
+หน้าที่ของคุณ: ระบุว่าภาพ A และภาพ B แต่ละภาพเป็นประเภทไหน แล้วแกะข้อมูลออกมาเป็น JSON ตาม schema นี้เป๊ะๆ (ห้ามมีข้อความอื่นนอกจาก JSON, ห้ามใส่ markdown code fence):
+
+{
+  "imageAType": "requisition_report" หรือ "bank_statement" หรือ "unknown",
+  "imageBType": "requisition_report" หรือ "bank_statement" หรือ "unknown",
+  "reportItems": [
+    { "docNo": "STN00580", "payee": "ชื่อผู้รับเงิน", "bankAccount": "เลขบัญชี", "bankName": "ชื่อธนาคาร", "amount": 776.00, "jobCode": "JS 26014", "description": "รายละเอียดสั้นๆ" }
+  ],
+  "bankItems": [
+    { "time": "14:58:04", "direction": "out", "amount": 680.54, "counterName": "ชื่อ/รายละเอียดที่ขึ้นในรายการ", "counterAccount": "เลขบัญชีปลายทางถ้ามี", "balanceAfter": null }
+  ],
+  "bankEndingBalance": 54487.47
+}
+
+กติกา:
+- "direction" ใน bankItems เป็น "out" สำหรับรายการโอนเงิน(ลบ) และ "in" สำหรับรับโอนเงิน(บวก)
+- ถ้าอ่านตัวเลขไม่ชัดหรือไม่แน่ใจ ให้ใส่ค่าที่อ่านได้ดีที่สุด อย่าใส่ null ถ้าพอเดาได้จากบริบท
+- "bankEndingBalance" คือยอดเงินคงเหลือล่าสุดที่แสดงในสกรีนธนาคาร (ถ้ามี)
+- ถ้าไม่พบรูปแบบใดรูปแบบหนึ่ง (เช่นมีแต่รูปธนาคาร) ให้ array ของอีกฝั่งเป็น [] และ bankEndingBalance เป็น null`;
+
+  let result;
+  try {
+    result = await callGeminiVision(prompt, [imageBufferA, imageBufferB]);
+  } catch (primaryError) {
+    console.warn(`⚠️ Gemini vision failed: ${primaryError.message} — ลองใช้ Groq vision แทน`);
+    result = await callGroqVision(prompt, [imageBufferA, imageBufferB]);
+    result.modelLabel += ' (fallback)';
+  }
+
+  console.log(`✅ Payment documents extracted by ${result.modelLabel}`);
+
+  let parsed;
+  try {
+    parsed = parseJsonFromModel(result.text);
+  } catch (e) {
+    throw new Error(`อ่าน JSON จากผลลัพธ์ AI ไม่สำเร็จ: ${e.message}\n--- raw ---\n${result.text.slice(0, 500)}`);
+  }
+
+  return {
+    imageAType: parsed.imageAType || 'unknown',
+    imageBType: parsed.imageBType || 'unknown',
+    reportItems: parsed.reportItems || [],
+    bankItems: parsed.bankItems || [],
+    bankEndingBalance: parsed.bankEndingBalance ?? null,
+    model: result.modelLabel,
+  };
+}
+
+// ── Matching: จับคู่รายการตั้งเบิก กับ รายการโอนจริงจากธนาคาร ────────────────
+// เกณฑ์: จำนวนเงินต้องตรง (เผื่อ 0.01 บาทกันปัดเศษ) + ชื่อผู้รับ/เลขบัญชีคล้ายกันพอสมควร
+// หมายเหตุ: reportItems อาจมีทั้งรายการจ่ายออก (ปกติ) และรายการรับเข้า (เช่น เงินยืมคืน)
+// ปนกันอยู่ในตารางเดียว จึงเทียบกับ bankItems ทุกทิศทาง ไม่จำกัดแค่ direction = 'out'
+// ส่วนการเช็ค "มีรายการโอนแปลกปลอมที่ไม่มีในรายงาน" (not_found_in_report) เช็คเฉพาะขาออกเท่านั้น
+// เพราะเป็นความเสี่ยงจริง (เงินออกโดยไม่มีการขออนุมัติ) ต่างจากเงินเข้าที่ไม่ต้องขออนุมัติ
+function normalizeForMatch(str) {
+  return (str || '').toString().toLowerCase().replace(/[^a-z0-9ก-๙]/g, '');
+}
+
+function namesLikelyMatch(a, b) {
+  const na = normalizeForMatch(a);
+  const nb = normalizeForMatch(b);
+  if (!na || !nb) return false;
+  return na.includes(nb) || nb.includes(na) || na.slice(-4) === nb.slice(-4);
+}
+
+function matchPaymentItems(reportItems, bankItems) {
+  const usedBankIdx = new Set();
+  const matchResults = [];
+
+  for (const reportItem of reportItems) {
+    let matchIdx = -1;
+    for (let i = 0; i < bankItems.length; i++) {
+      if (usedBankIdx.has(i)) continue;
+      const bankItem = bankItems[i];
+      const amountMatches = Math.abs(Number(bankItem.amount) - Number(reportItem.amount)) < 0.01;
+      if (!amountMatches) continue;
+
+      const nameMatches =
+        namesLikelyMatch(reportItem.payee, bankItem.counterName) ||
+        namesLikelyMatch(reportItem.bankAccount, bankItem.counterAccount);
+
+      const isOnlyAmountMatch = bankItems.filter((b, j) => !usedBankIdx.has(j) && Math.abs(Number(b.amount) - Number(reportItem.amount)) < 0.01).length === 1;
+
+      if (nameMatches || isOnlyAmountMatch) {
+        matchIdx = i;
+        break;
+      }
+    }
+
+    if (matchIdx >= 0) {
+      usedBankIdx.add(matchIdx);
+      matchResults.push({ reportItem, bankItem: bankItems[matchIdx], status: 'matched', note: '' });
+    } else {
+      matchResults.push({ reportItem, bankItem: null, status: 'not_found_in_bank', note: 'ไม่พบรายการโอนที่ยอดตรงกันในสลิปธนาคาร' });
+    }
+  }
+
+  bankItems.forEach((bankItem, i) => {
+    if (!usedBankIdx.has(i) && bankItem.direction === 'out') {
+      matchResults.push({ reportItem: null, bankItem, status: 'not_found_in_report', note: 'มีรายการโอนเงินออกที่ไม่ตรงกับรายการตั้งเบิกใดเลย' });
+    }
+  });
+
+  const overallStatus = matchResults.every(m => m.status === 'matched') ? 'matched' : 'has_mismatch';
+  return { matchResults, overallStatus };
+}
+
+module.exports = {
+  summarizeAllChatsForDate,
+  extractPaymentDocuments,
+  matchPaymentItems,
+};

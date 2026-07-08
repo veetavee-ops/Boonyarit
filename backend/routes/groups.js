@@ -4,6 +4,7 @@ const { Message, Group, User, AdminGroup } = require('../models/index');
 const sequelize = require('../config/database');
 const { Op } = require('sequelize');
 const authMiddleware = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/auth');
 
 router.use(authMiddleware);
 
@@ -27,8 +28,8 @@ router.get('/', async (req, res) => {
           'groupId',
           [sequelize.fn('MAX', sequelize.col('timestamp')), 'lastMessageTime'],
         ],
-        include: [{ model: Group, as: 'group', attributes: ['groupName', 'pictureUrl'] }],
-        group: ['Message.groupId', 'group.groupId'],
+        include: [{ model: Group, as: 'group', attributes: ['groupName', 'pictureUrl', 'isPaymentVerifyGroup'] }],
+        group: ['Message.groupId', 'group.groupId', 'group.isPaymentVerifyGroup'],
         order: [[sequelize.fn('MAX', sequelize.col('timestamp')), 'DESC']],
       });
 
@@ -38,6 +39,7 @@ router.get('/', async (req, res) => {
         pictureUrl: m.group?.pictureUrl,
         isPrivate: false,
         lastMessageTime: m.dataValues.lastMessageTime,
+        isPaymentVerifyGroup: m.group?.isPaymentVerifyGroup || false,
       }));
     } catch (error) {
       console.error('[ERROR] Fetching group chats:', error.message);
@@ -198,6 +200,22 @@ router.get('/stats', async (req, res) => {
     res.json({ totalGroups: groups.length, todayMessages, weekMessages, groups });
   } catch (error) {
     console.error('[ERROR] GET /api/groups/stats:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/groups/:groupId/payment-verify — เปิด/ปิดฟีเจอร์ตรวจสอบการโอนเงิน OCR สำหรับกลุ่มนี้
+// เฉพาะ role admin เท่านั้น (เหมือนหน้า Dashboard ตรวจสอบเงิน)
+router.patch('/:groupId/payment-verify', requireAdmin, async (req, res) => {
+  try {
+    const { isPaymentVerifyGroup } = req.body;
+    const group = await Group.findByPk(req.params.groupId);
+    if (!group) return res.status(404).json({ error: 'ไม่พบกลุ่ม' });
+
+    await group.update({ isPaymentVerifyGroup: !!isPaymentVerifyGroup });
+    res.json({ groupId: group.groupId, isPaymentVerifyGroup: group.isPaymentVerifyGroup });
+  } catch (error) {
+    console.error('[ERROR] PATCH /api/groups/:groupId/payment-verify:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
