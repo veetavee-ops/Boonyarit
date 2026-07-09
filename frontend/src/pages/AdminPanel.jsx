@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchUsers, createUser, updateUserLineId, deleteUser, assignGroupToUser, unassignGroupFromUser } from '../api/users';
+import { fetchUsers, createUser, updateUserLineId, updateUserRole, deleteUser, assignGroupToUser, unassignGroupFromUser } from '../api/users';
 import { fetchGroups } from '../api/messages';
 import { fetchLineUsers, toggleLineUserSearch } from '../api/lineUsers';
 import { fetchSettings, updateSetting } from '../api/settings';
@@ -146,6 +146,18 @@ export default function AdminPanel() {
     }
   };
 
+  const handleUpdateRole = async (userId, role) => {
+    if (!confirm(`ยืนยันเปลี่ยน role เป็น "${role}"?`)) return;
+    try {
+      const updated = await updateUserRole(userId, role);
+      // เปลี่ยนเป็น superuser แล้วจะหายจากลิสต์ทันที (ลิสต์นี้ไม่แสดง superuser) — ตั้งใจ
+      setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: updated.role } : u)));
+      setSelectedUser((prev) => (prev?.id === userId ? { ...prev, role: updated.role } : prev));
+    } catch (err) {
+      setError(err.response?.data?.error || 'เปลี่ยน role ไม่สำเร็จ');
+    }
+  };
+
   const handleDelete = async (id) => {
     if (!confirm('ยืนยันลบผู้ใช้นี้?')) return;
     try {
@@ -272,6 +284,20 @@ export default function AdminPanel() {
                 {selectedUser.role === 'admin' && (
                   <p className="ap-note">Admin เห็นทุกกลุ่มอยู่แล้ว — ไม่ต้อง assign</p>
                 )}
+                <div className="ap-form-row">
+                  <select
+                    className="ap-select"
+                    value={selectedUser.role}
+                    onChange={(e) => handleUpdateRole(selectedUser.id, e.target.value)}
+                  >
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                    <option value="superuser">Superuser</option>
+                  </select>
+                </div>
+                <p className="ap-note">
+                  Superuser เข้าหน้า "จัดการผู้ใช้" นี้ได้ + ใช้คำสั่ง help ทาง LINE DM ได้ — ให้เฉพาะคนที่ไว้ใจสูงสุดเท่านั้น
+                </p>
                 <div className="ap-form-row">
                   <select
                     className="ap-select"

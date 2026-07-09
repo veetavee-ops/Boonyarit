@@ -3,7 +3,7 @@ const router = express.Router();
 const { Op, fn, col } = require('sequelize');
 const { Admin, AdminGroup, Message } = require('../models/index');
 const authMiddleware = require('../middleware/auth');
-const { requireAdmin } = require('../middleware/auth');
+const { requireAdmin, requireSuperuser } = require('../middleware/auth');
 
 router.use(authMiddleware, requireAdmin);
 
@@ -91,6 +91,24 @@ router.patch('/:id', async (req, res) => {
       lineUserId: user.lineUserId,
       groupIds: groupAccess.map((g) => g.groupId),
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// PATCH /api/users/:id/role — เปลี่ยน role ผู้ใช้ (เฉพาะ superuser เรียกได้ — ป้องกันการเลื่อนสิทธิ์ตัวเอง/คนอื่นโดยพลการ)
+router.patch('/:id/role', requireSuperuser, async (req, res) => {
+  try {
+    const { role } = req.body;
+    if (!['user', 'admin', 'superuser'].includes(role)) {
+      return res.status(400).json({ error: 'role ต้องเป็น user, admin หรือ superuser' });
+    }
+    if (req.params.id === req.admin.id) return res.status(400).json({ error: 'เปลี่ยน role ตัวเองไม่ได้' });
+    const user = await Admin.findByPk(req.params.id);
+    if (!user) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    user.role = role;
+    await user.save();
+    res.json({ id: user.id, username: user.username, role: user.role });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

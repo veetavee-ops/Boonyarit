@@ -46,5 +46,14 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
+// ใช้กับ action ที่ sensitive มาก เช่น เปลี่ยน role ผู้ใช้คนอื่น — admin ธรรมดาทำไม่ได้
+const requireSuperuser = (req, res, next) => {
+  if (!req.admin || req.admin.role !== 'superuser') {
+    return res.status(403).json({ error: 'Forbidden — superuser only' });
+  }
+  next();
+};
+
 module.exports = authMiddleware;
 module.exports.requireAdmin = requireAdmin;
+module.exports.requireSuperuser = requireSuperuser;

@@ -284,6 +284,52 @@ async function handleSummarizeCommand(event, userId, groupId, sourceType, daysBa
     }
 }
 
+// ─── คำสั่ง "help" — อธิบายวัตถุประสงค์ระบบ + canSearch + cron cleanup ──────────
+// ชั่วคราวสำหรับทีมงานทบทวน/ทดสอบผ่าน LINE โดยตรง — ลบออกก่อนเปิดให้ลูกค้าจริงใช้งาน
+// (เนื้อหาเผยรายละเอียดภายใน เช่น canSearch/การลบข้อมูล ไม่เหมาะให้ลูกค้าทั่วไปเห็น)
+async function handleHelpCommand(event) {
+    const replyToken = event.replyToken;
+    const text = `📖 Boonyarit คืออะไร
+
+LINE OA ที่ทำหน้าที่ archive แชท + บอทตอบอัตโนมัติ + admin dashboard
+ให้ธุรกิจที่คุยงานผ่าน LINE มีที่เก็บถาวร ค้นย้อนหลังได้ ไม่ต้องพึ่ง LINE app เดิม
+
+
+🗂️ ฟีเจอร์หลัก
+
+1) Archive — ทุกข้อความ/ไฟล์ในกลุ่มหรือ DM ที่บอทอยู่ด้วย บันทึกลง DB + ไฟล์ขึ้น GCS (backup ไป Drive) ให้ staff ดูย้อนหลังผ่าน dashboard
+
+2) บอทค้นหาไฟล์ (Tier 1) — ลูกค้า DM ไฟล์ให้บอทเก็บ พิมพ์ "ค้นหา [คำ]" ดึงไฟล์ตัวเองกลับมาได้ จำกัด 10 ไฟล์/คน
+
+3) ตรวจสอบการโอนเงิน (AI Vision) — ส่งรูปตั้งเบิก + สกรีนช็อตธนาคารเข้ากลุ่มที่ติดธงไว้ AI จับคู่ยอดอัตโนมัติ ตอบกลับทันที + เก็บ ledger ให้ดูใน dashboard
+
+
+🔑 canSearch คืออะไร
+
+Flag ต่อ user (ลูกค้า) ที่ admin เปิด/ปิดเองจาก admin panel
+- true → ใช้คำสั่ง "ค้นหา"/"สรุปเลย" ทาง DM ได้ + ได้รับการยกเว้นจากระบบลบข้อมูลอัตโนมัติ (ถือว่าตั้งใจใช้งานจริง)
+- false (default) → DM เงียบ ไม่ตอบกลับคำสั่งพวกนี้ และเข้าเงื่อนไขลบข้อมูลอัตโนมัติได้ตามปกติ
+
+หมายเหตุ: flag เดียวทำหน้าที่ 2 อย่าง (สิทธิ์ค้นหา + ยกเว้นการลบ) ผูกกันโดยตั้งใจ
+
+
+🗑️ ระบบลบข้อมูลอัตโนมัติ (cron ทุกวันตี 2)
+
+เงื่อนไข: user ที่ canSearch=false และไม่มีข้อความใหม่เกิน 180 วัน
+
+วัน 173 → push LINE เตือนว่าจะลบใน 7 วัน
+วัน 180 → ลบจริง:
+  • DB: ลบ message ทั้งหมดของ user นั้นถาวร (เก็บ user record ไว้)
+  • GCS: ลบไฟล์จริงตาม gcsPath/gcsPaths ในแต่ละ message
+  • Google Drive: ไม่ลบ — backup บน Drive ค้างอยู่ถาวร (ยังไม่ implement)
+
+
+⚠️ ข้อความนี้เป็นคำสั่งทดสอบชั่วคราว จะถูกลบออกก่อนเปิดให้ลูกค้าจริงใช้งาน`;
+
+    await client.replyMessage(replyToken, { type: 'text', text: truncateForLine(text) + BOT_COMMAND_NOTICE })
+        .catch(e => console.error('[Help] replyMessage error:', e.message));
+}
+
 async function handleEvent(event, io) {
     console.log('[Event]', event.type, event.source?.type, event.source?.userId?.slice(0, 10));
     if (event.type !== 'message') return;
@@ -299,6 +345,13 @@ async function handleEvent(event, io) {
     const linkedAdmin = sourceType === 'user' ? await Admin.findOne({ where: { lineUserId: userId } }) : null;
 
     if (message.type === 'text') {
+        // คำสั่ง "help" ชั่วคราว — เฉพาะ DM จาก admin ที่ผูก LINE ID ไว้และมี role superuser เท่านั้น
+        // ไม่ทำงานในกลุ่มเลย กันลูกค้า/ทีมงานทั่วไปเห็นรายละเอียดภายในระบบ (จะลบก่อนเปิดลูกค้าจริง)
+        if (sourceType === 'user' && linkedAdmin?.role === 'superuser' && /^help$/i.test((message.text || '').trim())) {
+            await handleHelpCommand(event);
+            return;
+        }
+
         const searchKeyword = await getSearchKeyword();
         const isSearchCommand = new RegExp(`^${escapeRegex(searchKeyword)}\\s+`, 'u').test(message.text || '');
         const summarizeKeyword = await getSummarizeKeyword();
