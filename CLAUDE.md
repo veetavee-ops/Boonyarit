@@ -333,14 +333,12 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
 
 ### 🟡 ถัดไป
 
-1. **🔴 commit งานฟีเจอร์ตรวจสอบการโอนเงิน (OCR) ที่ค้างอยู่ใน working tree** — 10 ไฟล์ (ดูรายละเอียด session 12) ยังไม่ commit เลย ก่อน commit ให้เช็คว่าอยากแยกเป็นหลาย commit ไหม (BOT_COMMAND_NOTICE เป็นคนละเรื่องกับฟีเจอร์ OCR ปนอยู่ใน `webhook.js` ไฟล์เดียวกัน)
-2. **🔴 push ขึ้น origin** — local นำหน้าอยู่ 4 commits ยังไม่ขึ้น GitHub เลย (รวม Pattern 2 migration ที่ค้างมาตั้งแต่ session 9)
-3. **ทดสอบฟีเจอร์ตรวจสอบการโอนเงินกับรูปจริงผ่าน LINE** — เปิดธง `isPaymentVerifyGroup` ให้กลุ่มทดสอบก่อน แล้วลองส่ง 2 รูปจริง (ยังทดสอบแค่ logic/DB/API ผ่าน HTTP เท่านั้น ยังไม่เคยทดสอบผ่าน LINE จริง)
-4. **แก้ Gemini API billing** — เข้า https://aistudio.google.com/apikey เช็ค project ที่สร้าง key แล้วผูก billing account ให้ปลดล็อก free tier (ตอนนี้ระบบพึ่ง Groq เป็นหลักอย่างเดียว)
-5. **SMTP สำหรับฟีเจอร์ลืมรหัสผ่าน** — ยังไม่ได้ตั้งค่า รอ Gmail + App Password จากคุณ (พักไว้ตั้งแต่ต้น session ยังไม่กลับมาทำ)
-6. **tax-ocr Drive cleanup** — ลบ CLAUDE.md 4 อัน (keep `1BUdruo8dnxxXibPUNCegEoJiraxujWAo`) + ลบ .env 2 อัน (keep `1e2288av9H0RRX2yjgMyhxXCIIfAWGDha`) รอ user confirm
-7. **root misplaced files** — `gdrive.md` + `start.md` ในรากของ Drive ควรย้ายเข้า `_claude-skills` หรือปล่อยไว้ รอ user confirm
-8. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`
+1. **ทดสอบฟีเจอร์ตรวจสอบการโอนเงินกับรูปจริงผ่าน LINE** — เปิดธง `isPaymentVerifyGroup` ให้กลุ่มทดสอบก่อน แล้วลองส่ง 2 รูปจริง (ยังทดสอบแค่ logic/DB/API ผ่าน HTTP เท่านั้น ยังไม่เคยทดสอบผ่าน LINE จริง)
+2. **แก้ Gemini API billing** — เข้า https://aistudio.google.com/apikey เช็ค project ที่สร้าง key แล้วผูก billing account ให้ปลดล็อก free tier (ตอนนี้ระบบพึ่ง Groq เป็นหลักอย่างเดียว)
+3. **SMTP สำหรับฟีเจอร์ลืมรหัสผ่าน** — ยังไม่ได้ตั้งค่า รอ Gmail + App Password จากคุณ (พักไว้ตั้งแต่ต้น session ยังไม่กลับมาทำ)
+4. **tax-ocr Drive cleanup** — ลบ CLAUDE.md 4 อัน (keep `1BUdruo8dnxxXibPUNCegEoJiraxujWAo`) + ลบ .env 2 อัน (keep `1e2288av9H0RRX2yjgMyhxXCIIfAWGDha`) รอ user confirm
+5. **root misplaced files** — `gdrive.md` + `start.md` ในรากของ Drive ควรย้ายเข้า `_claude-skills` หรือปล่อยไว้ รอ user confirm
+6. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`
 
 ### 🔑 docker compose restart ไม่โหลด .env ใหม่
 
