@@ -4,6 +4,7 @@ import { fetchGroups } from '../api/messages';
 import { fetchLineUsers, toggleLineUserSearch } from '../api/lineUsers';
 import { fetchSettings, updateSetting } from '../api/settings';
 import { toggleGroupPaymentVerify } from '../api/paymentVerification';
+import { toggleGroupReceiptSummary } from '../api/receiptSummary';
 import './AdminPanel.css';
 
 export default function AdminPanel() {
@@ -28,6 +29,10 @@ export default function AdminPanel() {
   const [summarizeKeyword, setSummarizeKeyword] = useState('สรุปเลย');
   const [summarizeKeywordSaving, setSummarizeKeywordSaving] = useState(false);
   const [summarizeKeywordSaved, setSummarizeKeywordSaved] = useState(false);
+  // คำสั่งเปิด/ปิดสรุปบิลซื้อของ (OCR) ผ่าน LINE bot — พิมพ์ครั้งแรกเริ่มรวบรวมรูป พิมพ์ซ้ำปิด+สรุป (default "225588")
+  const [receiptSummaryKeyword, setReceiptSummaryKeyword] = useState('225588');
+  const [receiptSummaryKeywordSaving, setReceiptSummaryKeywordSaving] = useState(false);
+  const [receiptSummaryKeywordSaved, setReceiptSummaryKeywordSaved] = useState(false);
 
   useEffect(() => {
     Promise.all([fetchUsers(), fetchGroups()])
@@ -48,6 +53,7 @@ export default function AdminPanel() {
         if (s.drive_enabled !== undefined) setDriveEnabled(s.drive_enabled === 'true');
         if (s.search_keyword) setSearchKeyword(s.search_keyword);
         if (s.summarize_keyword) setSummarizeKeyword(s.summarize_keyword);
+        if (s.receipt_summary_keyword) setReceiptSummaryKeyword(s.receipt_summary_keyword);
       })
       .catch(() => {});
   }, []);
@@ -103,6 +109,32 @@ export default function AdminPanel() {
       );
     } catch (err) {
       setError('อัปเดตกลุ่มตรวจสอบการเงินไม่สำเร็จ');
+    }
+  };
+
+  const handleToggleReceiptSummary = async (groupId, current) => {
+    try {
+      await toggleGroupReceiptSummary(groupId, !current);
+      setGroups((prev) =>
+        prev.map((g) => g.groupId === groupId ? { ...g, isReceiptSummaryGroup: !current } : g)
+      );
+    } catch (err) {
+      setError('อัปเดตกลุ่มสรุปบิลซื้อของไม่สำเร็จ');
+    }
+  };
+
+  const handleSaveReceiptSummaryKeyword = async () => {
+    const trimmed = receiptSummaryKeyword.trim();
+    if (!trimmed) return;
+    setReceiptSummaryKeywordSaving(true);
+    setReceiptSummaryKeywordSaved(false);
+    try {
+      await updateSetting('receipt_summary_keyword', trimmed);
+      setReceiptSummaryKeywordSaved(true);
+    } catch (err) {
+      setError('อัปเดตคำสั่งสรุปบิลไม่สำเร็จ');
+    } finally {
+      setReceiptSummaryKeywordSaving(false);
     }
   };
 
@@ -402,6 +434,30 @@ export default function AdminPanel() {
             </button>
           </div>
         </div>
+
+        <div className="ap-setting-row">
+          <div className="ap-setting-info">
+            <span className="ap-setting-label">คำสั่งสรุปบิลซื้อของผ่าน LINE bot (OCR)</span>
+            <span className="ap-setting-desc">
+              พิมพ์คำนี้ในกลุ่มที่เปิดไว้ = เริ่มรวบรวมรูปบิล ส่งรูปได้สูงสุด 10 รูป แล้วพิมพ์คำเดิมอีกครั้ง = ปิด+สรุป
+            </span>
+          </div>
+          <div className="ap-form-row" style={{ flex: '0 0 auto' }}>
+            <input
+              className="ap-input"
+              style={{ width: 140 }}
+              value={receiptSummaryKeyword}
+              onChange={(e) => { setReceiptSummaryKeyword(e.target.value); setReceiptSummaryKeywordSaved(false); }}
+            />
+            <button
+              className="ap-btn-primary"
+              onClick={handleSaveReceiptSummaryKeyword}
+              disabled={receiptSummaryKeywordSaving || !receiptSummaryKeyword.trim()}
+            >
+              {receiptSummaryKeywordSaving ? 'กำลังบันทึก...' : receiptSummaryKeywordSaved ? 'บันทึกแล้ว ✓' : 'บันทึก'}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ── กลุ่มตรวจสอบการโอน-จ่ายเงิน (OCR) ── */}
@@ -421,6 +477,30 @@ export default function AdminPanel() {
                   onClick={() => handleTogglePaymentVerify(g.groupId, g.isPaymentVerifyGroup)}
                 >
                   {g.isPaymentVerifyGroup ? 'เปิดอยู่' : 'ปิดอยู่'}
+                </button>
+              </div>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* ── กลุ่มสรุปบิลซื้อของ (OCR) ── */}
+      <div className="ap-card ap-settings-card">
+        <h2 className="ap-card-title">กลุ่มสรุปบิลซื้อของ (OCR)</h2>
+        <p className="ap-note">
+          เปิดเฉพาะกลุ่มที่จะให้พิมพ์คำสั่งด้านบนแล้วส่งรูปบิล 1-10 รูป ให้ AI สรุปเป็นข้อความอัตโนมัติ
+          ผลสรุปตอบกลับใน LINE เท่านั้น ไม่ถูกเก็บไว้ดูย้อนหลัง — กลุ่มอื่นที่ไม่เปิดจะไม่ถูกแตะต้องเลย
+        </p>
+        <ul className="ap-group-list">
+          {groups.map((g) => (
+            <li key={g.groupId} className="ap-group-item">
+              <div className="ap-setting-row">
+                <span>{g.groupName}</span>
+                <button
+                  className={`ap-toggle${g.isReceiptSummaryGroup ? ' ap-toggle--on' : ''}`}
+                  onClick={() => handleToggleReceiptSummary(g.groupId, g.isReceiptSummaryGroup)}
+                >
+                  {g.isReceiptSummaryGroup ? 'เปิดอยู่' : 'ปิดอยู่'}
                 </button>
               </div>
             </li>
