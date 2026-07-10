@@ -31,7 +31,75 @@
 
 ## Session Status
 
-### อัพเดท: 8 กรกฎาคม 2569 (session 11)
+### อัพเดท: 10 กรกฎาคม 2569 (session 13)
+
+### ✅ Session 13 — ส่งต่อ/ส่งตรงเข้า LINE + AI ผู้ช่วย + คำสั่งค้นหา/สรุปใน dashboard (10 ก.ค. 69)
+
+**คลิกขวาที่ข้อความ (commit `ea3204b` + งานถัดจากนั้นยังไม่ commit ตอนต้น session):**
+- คลิกขวา = เข้า select-mode ทันที + ติ๊กข้อความนั้นให้เลย (ทางลัดไปกดลบ/ส่งต่อต่อ) ไม่ใช่เมนู dropdown
+- Bug: เข้า select-mode ทำให้แถบด้านบน/compose bar โผล่-หาย → scroll กระโดด แก้ด้วยการจับ
+  `getBoundingClientRect()` ก่อน/หลัง แล้วชดเชย `scrollTop` ด้วย `requestAnimationFrame`
+
+**ส่งต่อข้อความไปกลุ่ม/DM อื่นใน LINE จริง (`POST /api/messages/forward`):**
+- รองรับ text/image/audio/sticker/location แบบ native (LINE message type), video/file fallback เป็น
+  ข้อความ+ลิงก์ (LINE ไม่มี message type สำหรับไฟล์ทั่วไป และ video ต้องมี preview thumbnail ที่เราไม่มี)
+- **บั๊กสำคัญที่เจอ**: ตอนแรกสร้างลิงก์รูปแบบ `/api/media?path=...` (ตัวเองทำ 302 redirect ไปยัง
+  signed GCS URL) — LINE **ไม่ follow redirect** ตอน fetch เนื้อหาจาก `originalContentUrl` เลยขึ้นแค่
+  กรอบว่างๆ ไม่มีรูปจริง แก้โดยเรียก `getSignedUrl()` จาก `gcsService.js` **ตรงๆ** แทน (ได้ URL ตรงไฟล์
+  บน GCS เลย ไม่ผ่าน redirect)
+- ไม่มี label กำกับที่มา (ตัดออกทีหลัง — ตรงกับพฤติกรรม forward ปกติของ LINE เอง)
+
+**พิมพ์ข้อความส่งตรงเข้าห้อง LINE (`POST /api/messages/send`, ใช้ `requireAdmin`):**
+- จำกัดเฉพาะ role `superuser`/`admin` — มี popup ยืนยันก่อน push ทุกครั้ง (2-click intent +
+  focus-swap ตาม `/popup` convention) ไม่บันทึกข้อความนี้ลง DB
+
+**ESC รวมเป็น handler เดียว (จากเดิมกระจายอยู่หลายที่):**
+- ไล่ปิดทีละชั้นจากในสุดออกมา: popup ลบ → ส่งต่อ → ส่งข้อความ → มุมมองสื่อ → ข้อความสำคัญ → select-mode
+  → (ไม่เหลืออะไร ไม่ทำอะไรต่อ — เว็บแอปสั่งปิด/ย่อหน้าต่างเบราว์เซอร์เองไม่ได้จริงๆ ข้อจำกัดเบราว์เซอร์)
+- ESC ตอนกำลังพิมพ์ในช่องแชท = ล้างข้อความ + ออกจากช่องพิมพ์ (แยกต่างหาก ไม่ปนกับ handler รวม)
+
+**🆕 DM "🤖 AI ผู้ช่วย" — ผ่านการ pivot 1 รอบระหว่าง session:**
+- ตอนแรกให้ DM นี้รองรับคำสั่ง "ค้นหา"/"สรุปเลย" เหมือน LINE — **ผิด** เพราะ DM นี้ไม่มีกลุ่มอ้างอิง
+  ทำให้ค้นหา/สรุปไม่มีบริบท (user ทดสอบแล้วชี้ปัญหา)
+- **แก้เป็นสถาปัตยกรรมที่ถูกต้อง**:
+  - "ค้นหา"/"สรุปเลย" → พิมพ์ในห้องแชทกลุ่ม/DM **จริง** ที่เปิดอยู่เท่านั้น (`POST /api/messages/command`)
+    สโคปเฉพาะห้องนั้น ไม่ push เข้า LINE ไม่มี popup ยืนยัน ตอบเป็น bubble ชั่วคราวในกระทู้เดิม
+    (reset ตอนสลับห้อง, ไม่บันทึก DB) — ระบุขอบเขต (ชื่อกลุ่ม/DM + "ไม่จำกัดช่วงเวลา" สำหรับค้นหา)
+    ต่อท้ายคำตอบเสมอ กันสับสน
+  - DM "AI ผู้ช่วย" → คุยแบบ free-form กับ LLM จริง (`POST /api/messages/ask`) ไม่ผูกคำสั่งตายตัว
+- สร้าง `backend/services/botCommandService.js` ใหม่ — ย้าย logic ค้นหา/สรุปที่ใช้ร่วมกับ LINE
+  (`webhook.js`) มาเป็น shared function `buildSearchReply(keyword, scopeWhere)` /
+  `buildSummarizeReply(daysBack, scopeWhere)` — `scopeWhere` เป็น object ยืดหยุ่น (`{}` = ไม่จำกัด,
+  `{ groupId }` = กลุ่มเดียว, `{ groupId: {[Op.in]: [...]} }` = หลายกลุ่ม, `{ userId, groupId: null }`
+  = DM เดียว) `webhook.js` เดิมไม่กระทบพฤติกรรมเลย (แค่ wrap เรียก shared function แทนโค้ดซ้ำ)
+- Bubble คำตอบ AI/คำสั่ง ต้อง `linkifyText()` เอง (ChatWindow.jsx) ไม่งั้น URL ในคำตอบเป็น text เฉย ๆ
+  กดไม่ได้ (ต่างจาก MessageBubble ที่มี `parseTextWithLinks` อยู่แล้วแต่ไม่ได้ export มาใช้ซ้ำ)
+
+**⚠️ AI ผู้ช่วยตอบคำถามเรียลไทม์ผิด/หลอก (ราคาหุ้น TSLA) — วิเคราะห์ + แก้บางส่วน:**
+- Root cause: `askQuestion()` เดิมใช้ `llama-3.3-70b-versatile` ธรรมดา (ไม่มี web search) → ตอบมั่ว
+  (hallucinate) ตัวเลขราคาหุ้นที่ไม่จริงเวลาถามเรื่องเรียลไทม์
+- แก้: เพิ่ม `callGroq(prompt, model)` ให้เลือกโมเดลได้ต่องาน (เดิม hardcode ตัวเดียวใช้ทุกงาน) แล้วให้
+  `askQuestion()` ใช้ `groq/compound-mini` (โมเดล agentic ของ Groq ที่มี web search ในตัว ผ่าน Tavily)
+  — งาน "สรุปแชท" (`summarizeAllChatsForDate`) **ไม่กระทบ** ยังใช้ตัวเดิม
+- **Fallback เปลี่ยนจาก Gemini → Groq เอง** (`llama-3.3-70b-versatile`) เพราะ Gemini โควต้า=0 อยู่แล้ว
+  (documented ตั้งแต่ session 12) จะพังซ้ำถ้า fallback ไปหา — ตอนนี้ askQuestion ไม่พึ่ง Gemini เลย
+- เจอ 2 ปัญหาระหว่างทดสอบจริง: (1) `compound-mini` มี rate limit ต่ำกว่าโมเดลปกติมาก (ต้องค้นเว็บจริง
+  ทุกครั้ง) โดน 429 ง่าย — แก้ error message ให้เป็นภาษาไทยอ่านเข้าใจ (เดิมโชว์ raw axios error)
+  (2) บางครั้งตอบ placeholder หลอก (`$XXXX.XX`) แทนตัวเลขจริงทั้งที่ไม่ error — ลอง tune prompt ให้
+  ห้ามใส่ placeholder เด็ดขาด **ยังไม่ยืนยันว่าแก้ได้ 100%** (ทดสอบรอบล่าสุดตอบ "หาไม่เจอ" แทน ซึ่งอาจ
+  ดีขึ้นแล้ว หรืออาจเป็นแค่ search tool ไม่ได้ผลจริง — ต้องทดสอบเพิ่มต่อ session หน้า)
+
+**หลักการสำคัญที่ควรจำ**: เลือกโมเดล AI ตาม "งาน" ไม่ใช่ตั้งค่าเดียวใช้ทุกที่ — งานอ่านรูปใช้ตัวมีตา
+(Gemini/Llama Scout), งานต้องการข้อมูลเรียลไทม์ใช้ตัวค้นเว็บได้ (Groq compound), งานสรุป/ตอบทั่วไปที่
+ไม่ต้องการเรียลไทม์ใช้ตัว versatile ธรรมดาพอ (เร็ว ถูกกว่า)
+
+**ไฟล์ที่แก้/สร้างรอบนี้**: `backend/routes/messages.js` (+forward, +send, +ask, +command),
+`backend/routes/webhook.js` (refactor เรียก shared service), `backend/services/botCommandService.js`
+(ใหม่), `backend/services/aiService.js` (+askQuestion, model param), `frontend/src/App.jsx` (AI DM
+เสมือน + wiring ทุก handler ใหม่), `frontend/src/api/messages.js` (+4 ฟังก์ชันใหม่),
+`frontend/src/components/ChatWindow/ChatWindow.jsx` + `.css` (เปลี่ยนเยอะที่สุด — select-mode
+ปุ่มใหม่, compose bar, AI chat mode, local bubbles, ESC handler รวม), `MessageBubble.jsx`
+(+onContextMenu)
 
 ### ✅ Session 1 — Repo rename + Image Drive upload fix (24 มิ.ย. 69)
 
@@ -333,14 +401,20 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
 
 ### 🟡 ถัดไป
 
-1. **🔴 commit งานฟีเจอร์ตรวจสอบการโอนเงิน (OCR) ที่ค้างอยู่ใน working tree** — 10 ไฟล์ (ดูรายละเอียด session 12) ยังไม่ commit เลย ก่อน commit ให้เช็คว่าอยากแยกเป็นหลาย commit ไหม (BOT_COMMAND_NOTICE เป็นคนละเรื่องกับฟีเจอร์ OCR ปนอยู่ใน `webhook.js` ไฟล์เดียวกัน)
-2. **🔴 push ขึ้น origin** — local นำหน้าอยู่ 4 commits ยังไม่ขึ้น GitHub เลย (รวม Pattern 2 migration ที่ค้างมาตั้งแต่ session 9)
-3. **ทดสอบฟีเจอร์ตรวจสอบการโอนเงินกับรูปจริงผ่าน LINE** — เปิดธง `isPaymentVerifyGroup` ให้กลุ่มทดสอบก่อน แล้วลองส่ง 2 รูปจริง (ยังทดสอบแค่ logic/DB/API ผ่าน HTTP เท่านั้น ยังไม่เคยทดสอบผ่าน LINE จริง)
-4. **แก้ Gemini API billing** — เข้า https://aistudio.google.com/apikey เช็ค project ที่สร้าง key แล้วผูก billing account ให้ปลดล็อก free tier (ตอนนี้ระบบพึ่ง Groq เป็นหลักอย่างเดียว)
-5. **SMTP สำหรับฟีเจอร์ลืมรหัสผ่าน** — ยังไม่ได้ตั้งค่า รอ Gmail + App Password จากคุณ (พักไว้ตั้งแต่ต้น session ยังไม่กลับมาทำ)
-6. **tax-ocr Drive cleanup** — ลบ CLAUDE.md 4 อัน (keep `1BUdruo8dnxxXibPUNCegEoJiraxujWAo`) + ลบ .env 2 อัน (keep `1e2288av9H0RRX2yjgMyhxXCIIfAWGDha`) รอ user confirm
-7. **root misplaced files** — `gdrive.md` + `start.md` ในรากของ Drive ควรย้ายเข้า `_claude-skills` หรือปล่อยไว้ รอ user confirm
-8. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`
+1. **🔴 push ขึ้น origin** — local นำหน้า origin/main อยู่ (เพิ่มขึ้นอีกหลัง commit งาน session 13)
+   ยังไม่เคย push รอบนี้เลย
+2. **ทดสอบ AI ผู้ช่วยเรื่องข้อมูลเรียลไทม์เพิ่ม** — เพิ่งสลับ `askQuestion()` ไปใช้ `groq/compound-mini`
+   + tune prompt กัน placeholder หลอกแล้ว แต่ยังไม่ยืนยันชัดว่าค้นเว็บได้จริงสม่ำเสมอ (ทดสอบราคาหุ้นรอบ
+   ล่าสุดตอบ "หาไม่เจอ" — ต้องลองคำถามเรียลไทม์แบบอื่นเพิ่ม เช่น ข่าว/อัตราแลกเปลี่ยน ดูว่า tool ค้นเว็บ
+   ทำงานจริงไหม หรือแค่โมเดลตอบซื่อขึ้นแต่ยังค้นไม่สำเร็จ)
+3. **จับตา rate limit ของ `groq/compound-mini`** — ต่ำกว่าโมเดลปกติเยอะ (ต้องค้นเว็บจริงทุกครั้ง) ถ้าใช้
+   งานจริงบ่อยอาจโดน 429 ถี่ — ยังไม่ได้เช็ค tier/quota จริงใน Groq Console
+4. **ทดสอบฟีเจอร์ตรวจสอบการโอนเงินกับรูปจริงผ่าน LINE** — เปิดธง `isPaymentVerifyGroup` ให้กลุ่มทดสอบก่อน แล้วลองส่ง 2 รูปจริง (ยังทดสอบแค่ logic/DB/API ผ่าน HTTP เท่านั้น ยังไม่เคยทดสอบผ่าน LINE จริง)
+5. **แก้ Gemini API billing** — เข้า https://aistudio.google.com/apikey เช็ค project ที่สร้าง key แล้วผูก billing account ให้ปลดล็อก free tier (ตอนนี้ `askQuestion` เลิกพึ่ง Gemini ไปแล้ว แต่ฟีเจอร์อื่น เช่น อ่านสลิป ยังใช้ Gemini เป็นหลักอยู่)
+6. **SMTP สำหรับฟีเจอร์ลืมรหัสผ่าน** — ยังไม่ได้ตั้งค่า รอ Gmail + App Password จากคุณ
+7. **tax-ocr Drive cleanup** — ลบ CLAUDE.md 4 อัน (keep `1BUdruo8dnxxXibPUNCegEoJiraxujWAo`) + ลบ .env 2 อัน (keep `1e2288av9H0RRX2yjgMyhxXCIIfAWGDha`) รอ user confirm
+8. **root misplaced files** — `gdrive.md` + `start.md` ในรากของ Drive ควรย้ายเข้า `_claude-skills` หรือปล่อยไว้ รอ user confirm
+9. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`
 
 ### 🔑 docker compose restart ไม่โหลด .env ใหม่
 
@@ -391,3 +465,21 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
 > FK constraint ที่ qualify schemaผิด (อ้าง schema ของตัวเองแทนที่จะเป็น schema
 > ของตารางปลายทาง) ทำให้ `CREATE TABLE` fail ทั้งก้อน — join ตอน query ยังทำงาน
 > ปกติแม้ปิด constraint (แค่ไม่มี FK บังคับระดับ DB เท่านั้น)
+
+### 🔑 LINE ไม่ follow redirect ตอน fetch originalContentUrl/previewImageUrl
+
+> ถ้าสร้างลิงก์รูป/สื่อที่จะส่งออกทาง LINE (push/reply message) ด้วย endpoint ที่ตอบกลับแบบ
+> `res.redirect(url)` (เช่น `/api/media?path=...` ที่ redirect ไปยัง signed GCS URL) — LINE
+> จะพยายาม fetch ตรงจาก URL ที่ให้ไป **ไม่ follow redirect 302** ทำให้ได้กรอบว่างๆ แทนรูปจริง
+> **กฎ**: ต้องสร้าง URL ตรงไปยังไฟล์จริงเสมอ (เช่นเรียก `getSignedUrl()` จาก `gcsService.js` ตรงๆ)
+> ห้ามใช้ endpoint ที่ redirect เป็น `originalContentUrl`/`previewImageUrl` เด็ดขาด (ใช้เป็นลิงก์ให้
+> คนคลิกเปิดเองได้ปกติ เพราะ browser follow redirect อยู่แล้ว — ปัญหามีแค่ตอน LINE server เป็นคน fetch)
+
+### 🔑 เลือกโมเดล AI ตาม "งาน" ไม่ใช่ตั้งค่าเดียวใช้ทุกที่
+
+> `aiService.js` เดิม hardcode `GROQ_MODEL` ตัวเดียวใช้ทั้งสรุปแชทและถาม AI ทั่วไป พอจะเพิ่ม
+> ความสามารถให้งานหนึ่ง (เช่น web search แบบเรียลไทม์) ก็กระทบงานอื่นที่ไม่ต้องการไปด้วย
+> **กฎ**: ให้ `callGroq(prompt, model)` รับ `model` เป็นพารามิเตอร์เสมอ แล้วแต่ละงานเลือกโมเดลของ
+> ตัวเอง — งานอ่านรูปใช้ตัวมีตา (Gemini/Llama Scout), งานต้องการข้อมูลเรียลไทม์ใช้ตัวค้นเว็บได้
+> (`groq/compound`/`compound-mini`), งานสรุป/ตอบทั่วไปใช้ตัว versatile ธรรมดา (เร็ว ถูกกว่า ไม่มี
+> quota จำกัดโหดเท่าตัวที่ต้องค้นเว็บ)
