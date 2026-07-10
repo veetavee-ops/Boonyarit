@@ -9,7 +9,8 @@ const { uploadToGCS, buildGCSPath } = require('../services/gcsService');
 
 const { ensureGroupFolder, uploadFileToDrive } = require('../services/driveService');
 const { alertError } = require('../services/notifyService');
-const { summarizeAllChatsForDate, extractPaymentDocuments, matchPaymentItems } = require('../services/aiService');
+const { extractPaymentDocuments, matchPaymentItems } = require('../services/aiService');
+const { getSearchKeyword, getSummarizeKeyword, escapeRegex, matchSummarizeCommand, buildSearchReply, buildSummarizeReply } = require('../services/botCommandService');
 
 // ถ้าคนส่งข้อความนี้ผูก LINE ID กับบัญชี admin ไว้ (เมนู "ตั้งค่าบัญชี")
 // ให้สิทธิ์เข้าถึงกลุ่ม/DM นี้ให้อัตโนมัติทันที — ไม่ต้องรอผูก LINE ID ใหม่หรือให้ superadmin ไปติ๊กเพิ่มเอง
@@ -27,32 +28,6 @@ async function autoGrantAccessForMessage(userId, groupId, sourceType) {
 async function isDriveEnabled() {
     const s = await Setting.findByPk('drive_enabled');
     return s ? s.value === 'true' : true; // default เปิดอยู่
-}
-
-// คำสั่งค้นหาไฟล์ผ่าน LINE — ตั้งค่าได้เองในหน้า admin panel (ไม่ต้อง hardcode/แก้โค้ด)
-async function getSearchKeyword() {
-    const s = await Setting.findByPk('search_keyword');
-    return (s?.value || 'ค้นหา').trim();
-}
-
-// คำสั่งให้ AI สรุปแชทผ่าน LINE — ตั้งค่าได้เองในหน้า admin panel เหมือนกัน
-// พิมพ์เดี่ยวๆ = สรุปวันนี้, พิมพ์ตามด้วยเลข+"วัน" (เช่น "สรุปเลย 2 วัน") = สรุปย้อนหลังกี่วัน
-async function getSummarizeKeyword() {
-    const s = await Setting.findByPk('summarize_keyword');
-    return (s?.value || 'สรุปเลย').trim();
-}
-
-// เช็คว่าข้อความเป็นคำสั่งสรุปไหม คืน { isMatch, daysBack } — daysBack = null คือสรุปวันนี้
-function matchSummarizeCommand(text, keyword) {
-    const pattern = new RegExp(`^${escapeRegex(keyword)}\\s*(?:(\\d+)\\s*วัน)?\\s*$`, 'u');
-    const match = (text || '').trim().match(pattern);
-    if (!match) return { isMatch: false, daysBack: null };
-    return { isMatch: true, daysBack: match[1] ? parseInt(match[1], 10) : null };
-}
-
-// escape อักขระพิเศษของ regex กันคำที่ตั้งเองมีอักขระที่ regex ตีความผิด
-function escapeRegex(str) {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 
@@ -124,12 +99,9 @@ async function handleSearchCommand(event, userId, groupId, sourceType, keyword) 
     }
 
     const searchKeyword = match[1].trim();
-    const safeKeyword = searchKeyword.replace(/'/g, "''");
     console.log('[Search] keyword:', searchKeyword);
 
     try {
-        const { literal } = require('sequelize');
-
         let groupIds;
         if (sourceType === 'group' && groupId) {
             // ในกลุ่ม — ค้นหาเฉพาะไฟล์ของกลุ่มนี้เท่านั้น
@@ -153,49 +125,9 @@ async function handleSearchCommand(event, userId, groupId, sourceType, keyword) 
             return;
         }
 
-        const results = await Message.findAll({
-            where: {
-                messageType: 'file',
-                groupId: { [Op.in]: groupIds },
-                [Op.and]: [literal(`(metadata->>'fileName') ILIKE '%${safeKeyword}%'`)]
-            },
-            include: [
-                { model: User, as: 'user', attributes: ['displayName'] },
-                { model: Group, as: 'group', attributes: ['groupName'] }
-            ],
-            order: [['timestamp', 'DESC']],
-            limit: 5
-        });
-
-        if (results.length === 0) {
-            await client.replyMessage(replyToken, {
-                type: 'text',
-                text: `🔍 ไม่พบไฟล์ที่ชื่อมี "${searchKeyword}"\n\nลองคำค้นอื่นดูครับ${BOT_COMMAND_NOTICE}`
-            }).catch(() => {});
-            return;
-        }
-
-        let reply = `🔍 ค้นหา: "${searchKeyword}" — พบ ${results.length} รายการ\n\n`;
-        results.forEach((msg, i) => {
-            const meta = msg.metadata || {};
-            const fileName = meta.fileName || '(ไม่ทราบชื่อ)';
-            const groupName = msg.group?.groupName || '?';
-            const sender = msg.user?.displayName || '?';
-            const date = new Date(msg.timestamp).toLocaleDateString('th-TH', {
-                day: 'numeric', month: 'short', year: 'numeric'
-            });
-            const baseUrl = process.env.BASE_URL || 'https://boonyarit.achalee.com';
-            const link = meta.driveFileId
-                ? `https://drive.google.com/file/d/${meta.driveFileId}/view`
-                : meta.gcsPath
-                    ? `${baseUrl}/api/media?path=${encodeURIComponent(meta.gcsPath)}`
-                    : '(ไม่มีลิงก์)';
-
-            reply += `${i + 1}. ${fileName}\n   📂 ${groupName}  👤 ${sender}\n   📅 ${date}\n   🔗 ${link}\n\n`;
-        });
-
-        console.log('[Search] replying with', results.length, 'results');
-        await client.replyMessage(replyToken, { type: 'text', text: reply.trim() + BOT_COMMAND_NOTICE }).catch(e => console.error('[Search] replyMessage error:', e.message));
+        const reply = await buildSearchReply(searchKeyword, { groupId: { [Op.in]: groupIds } });
+        console.log('[Search] replying');
+        await client.replyMessage(replyToken, { type: 'text', text: reply + BOT_COMMAND_NOTICE }).catch(e => console.error('[Search] replyMessage error:', e.message));
     } catch (err) {
         console.error('[Search Error]', err.message);
         await client.replyMessage(replyToken, {
@@ -221,22 +153,9 @@ async function handleSummarizeCommand(event, userId, groupId, sourceType, daysBa
     console.log('[Summarize]', sourceType, 'from', userId?.slice(0, 10), 'daysBack:', daysBack);
 
     try {
-        // "วันนี้" ตามเวลาไทย (UTC+7) ไม่ใช่เวลา server
-        const bkkNow = new Date(Date.now() + 7 * 60 * 60 * 1000);
-        const todayStr = bkkNow.toISOString().slice(0, 10);
-
-        let where;
-        if (daysBack && daysBack > 0) {
-            const cutoff = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
-            where = { timestamp: { [Op.gte]: cutoff } };
-        } else {
-            const start = new Date(todayStr + 'T00:00:00.000Z');
-            const end = new Date(todayStr + 'T23:59:59.999Z');
-            where = { timestamp: { [Op.between]: [start, end] } };
-        }
-
+        let groupIds;
         if (sourceType === 'group' && groupId) {
-            where.groupId = groupId;
+            groupIds = [groupId];
         } else {
             // DM — สรุปทุกกลุ่มที่ userId นี้เคยส่งข้อความ (เป็นสมาชิกอยู่)
             const userGroups = await Message.findAll({
@@ -245,33 +164,14 @@ async function handleSummarizeCommand(event, userId, groupId, sourceType, daysBa
                 group: ['groupId'],
                 raw: true,
             });
-            const groupIds = userGroups.map((m) => m.groupId);
+            groupIds = userGroups.map((m) => m.groupId);
             if (groupIds.length === 0) {
                 await client.replyMessage(replyToken, { type: 'text', text: '📋 ไม่พบกลุ่มที่คุณเป็นสมาชิกครับ' + BOT_COMMAND_NOTICE }).catch(() => {});
                 return;
             }
-            where.groupId = { [Op.in]: groupIds };
         }
 
-        const messages = await Message.findAll({
-            where,
-            include: [
-                { model: User, as: 'user', attributes: ['displayName'] },
-                { model: Group, as: 'group', attributes: ['groupName'] },
-            ],
-            order: [['timestamp', 'ASC']],
-            limit: 2000,
-        });
-
-        if (messages.length === 0) {
-            const label = daysBack ? `ย้อนหลัง ${daysBack} วัน` : 'วันนี้';
-            await client.replyMessage(replyToken, { type: 'text', text: `📋 ${label}ยังไม่มีข้อความให้สรุปครับ` + BOT_COMMAND_NOTICE }).catch(() => {});
-            return;
-        }
-
-        const result = await summarizeAllChatsForDate(messages, 'groq');
-        const rangeLabel = daysBack ? `ย้อนหลัง ${daysBack} วัน` : 'วันนี้';
-        const reply = `📋 สรุปแชท${rangeLabel} (${result.messageCount} ข้อความ)\n\n${result.summary}`;
+        const reply = await buildSummarizeReply(daysBack, { groupId: { [Op.in]: groupIds } });
 
         await client.replyMessage(replyToken, { type: 'text', text: truncateForLine(reply) + BOT_COMMAND_NOTICE })
             .catch(e => console.error('[Summarize] replyMessage error:', e.message));

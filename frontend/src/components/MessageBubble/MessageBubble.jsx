@@ -468,7 +468,7 @@ function MediaModal({ media, onClose }) {
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImportant, myLineUserId, selectMode, selected, onToggleSelect }) {
+export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImportant, myLineUserId, selectMode, selected, onToggleSelect, onContextMenuSelect }) {
   const [lightboxImg, setLightboxImg] = useState(null);
   const [mediaModal, setMediaModal] = useState(null);
   const [linkUrl, setLinkUrl] = useState(null);
@@ -555,6 +555,10 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
       <div
         className={`msg ${isNewSender ? "new" : ""} ${isTimeBreak ? "time-gap" : ""} ${msg.isImportant ? "msg--important" : ""} ${isOwn ? "msg--own" : ""} ${selectMode ? "msg--select-mode" : ""} ${selected ? "msg--selected" : ""}`}
         data-id={msg.id}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          onContextMenuSelect?.(e);
+        }}
       >
         {/* Checkbox เลือกข้อความ — แสดงเฉพาะตอนอยู่ในโหมดเลือก */}
         {selectMode && (

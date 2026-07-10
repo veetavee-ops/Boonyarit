@@ -276,3 +276,47 @@
 }
 .btn-forward-confirm.focused { opacity: 1; transform: scale(1.05); }
 .btn-forward-confirm:disabled { opacity: 0.3 !important; cursor: not-allowed; transform: none; }
+
+/* ── Compose bar (พิมพ์ข้อความส่งตรงเข้าห้อง LINE) ─────────────── */
+.compose-bar {
+  display: flex; gap: 8px; padding: 10px 16px;
+  border-top: 1px solid var(--border-color); flex-shrink: 0;
+}
+.compose-input {
+  flex: 1; resize: none; border: 1px solid var(--border-color); border-radius: 10px;
+  padding: 8px 12px; font-family: 'Kanit', sans-serif; font-size: 13px;
+  background: var(--bg-surface); color: var(--text-primary);
+}
+.btn-compose-send {
+  padding: 0 18px; border-radius: 10px; border: none;
+  background: #2563eb; color: white; font-weight: 600; cursor: pointer;
+  font-family: 'Kanit', sans-serif;
+}
+.btn-compose-send:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-compose-send:hover:not(:disabled) { background: #1d4ed8; }
+
+/* ── DM คุยกับ AI ผู้ช่วย ──────────────────────────────────────── */
+.ai-assistant-messages {
+  display: flex; flex-direction: column; gap: 10px; padding: 16px; overflow-y: auto;
+}
+.ai-msg {
+  max-width: 75%; padding: 10px 14px; border-radius: 14px; font-size: 13px;
+  line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+.ai-msg--user {
+  align-self: flex-end; background: #2563eb; color: white; border-bottom-right-radius: 4px;
+}
+.ai-msg--ai {
+  align-self: flex-start; background: var(--bg-surface); color: var(--text-primary);
+  border: 1px solid var(--border-color); border-bottom-left-radius: 4px;
+}
+.ai-msg--thinking { opacity: 0.5; font-style: italic; }
+.ai-msg-link { color: inherit; text-decoration: underline; word-break: break-all; }
+.ai-msg--user .ai-msg-link { color: white; }
+
+/* ── คำตอบคำสั่ง ค้นหา/สรุป ที่ตอบ local ในกระทู้แชทจริง (ไม่บันทึกลง DB) ──────── */
+.local-bubbles {
+  display: flex; flex-direction: column; gap: 10px; padding: 10px 16px;
+  margin-top: 8px; border-top: 1px dashed var(--border-color);
+}
+.ai-msg--local { box-shadow: 0 0 0 1px rgba(37,99,235,0.25); }

@@ -146,13 +146,20 @@ ${chatSummaryText}`;
 }
 
 // ── Call Groq ────────────────────────────────────────────────────────────────
-async function callGroq(prompt) {
+// model: เลือกโมเดลตามงาน — ค่า default ใช้กับงานสรุปแชททั่วไป (ไม่ต้องค้นเว็บ เน้นเร็ว)
+// ส่วนงานที่ต้องการข้อมูลเรียลไทม์ (เช่น askQuestion) ให้ระบุ 'groq/compound-mini' แทน
+const GROQ_MODEL_LABELS = {
+  [GROQ_MODEL]: 'Llama 3.3 70B (Groq)',
+  'groq/compound-mini': 'Compound Mini (Groq, web search)',
+};
+
+async function callGroq(prompt, model = GROQ_MODEL) {
   if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY ยังไม่ได้ตั้งค่าใน .env');
 
   const response = await axios.post(
     GROQ_API,
     {
-      model: GROQ_MODEL,
+      model,
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 2048,
       temperature: 0.7,
@@ -167,7 +174,7 @@ async function callGroq(prompt) {
 
   return {
     text: response.data.choices[0].message.content,
-    modelLabel: 'Llama 3.3 70B (Groq)',
+    modelLabel: GROQ_MODEL_LABELS[model] || model,
   };
 }
 
@@ -428,8 +435,41 @@ function matchPaymentItems(reportItems, bankItems) {
   return { matchResults, overallStatus };
 }
 
+// ── คุยกับ AI ผู้ช่วยแบบ free-form (ไม่ผูกคำสั่งตายตัว) — ใช้ใน DM "AI ผู้ช่วย" ─────
+// ใช้ compound-mini (มี web search ในตัว) เป็นหลัก เพราะคำถามแบบนี้อาจต้องการข้อมูลเรียลไทม์
+// (เช่น ราคาหุ้นวันนี้) ที่โมเดลเปล่าไม่มีทางรู้ — เดาคำตอบเอง (hallucinate) ถ้าไม่มี tool ค้นเว็บ
+// ถ้า compound-mini โดน rate limit (มี quota ต่ำกว่าโมเดลปกติเพราะต้องค้นเว็บจริงทุกครั้ง) → fallback
+// ไปใช้ llama-3.3-70b-versatile ของ Groq เอง (เจ้าเดียวกัน เชื่อถือได้กว่า) แทนที่จะสลับไป Gemini
+// ซึ่งโปรเจกต์นี้โควต้า = 0 อยู่แล้ว (ไม่เคยผูก billing) จะพังซ้ำแน่ๆ
+async function askQuestion(question) {
+  const prompt = `คุณเป็นผู้ช่วย AI ของทีมงานในระบบแชท LINE OA ตอบคำถามเป็นภาษาไทย กระชับ ชัดเจน
+ถ้าคำถามต้องการข้อมูลล่าสุด/เรียลไทม์ (เช่น ราคาหุ้น อัตราแลกเปลี่ยน ข่าว สภาพอากาศ) ให้ค้นเว็บจริง
+แล้วตอบเป็นตัวเลข/ข้อมูลจริงที่ค้นเจอเท่านั้น ห้ามใส่ placeholder หรือสัญลักษณ์แทนตัวเลข (เช่น XXXX.XX)
+เด็ดขาด ถ้าค้นแล้วหาคำตอบที่แน่ชัดไม่ได้จริงๆ ให้บอกตรงๆ ว่าหาไม่เจอ แทนที่จะเดาหรือใส่ค่าตัวอย่าง
+
+คำถาม: ${question}`;
+
+  try {
+    let result;
+    try {
+      result = await callGroq(prompt, 'groq/compound-mini');
+    } catch (primaryError) {
+      console.warn(`⚠️ compound-mini failed: ${primaryError.message} — falling back to llama-3.3-70b-versatile (ไม่มี web search)`);
+      result = await callGroq(prompt);
+      result.modelLabel += ' (fallback, ไม่มี web search)';
+    }
+    return { text: result.text, model: result.modelLabel };
+  } catch (error) {
+    console.error('❌ AI Error:', error.message);
+    if (error.response?.status === 401) throw new Error('API Key ไม่ถูกต้อง ตรวจสอบใน .env');
+    if (error.response?.status === 429) throw new Error('ใช้งาน API เกิน rate limit กรุณารอสักครู่แล้วลองใหม่ (โมเดล compound-mini มี rate limit ต่ำกว่าโมเดลปกติ)');
+    throw new Error(error.response?.data?.error?.message || error.message);
+  }
+}
+
 module.exports = {
   summarizeAllChatsForDate,
   extractPaymentDocuments,
   matchPaymentItems,
+  askQuestion,
 };

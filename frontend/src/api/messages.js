@@ -105,6 +105,43 @@ export async function forwardMessages(messageIds, targetGroupId) {
 }
 
 /**
+ * พิมพ์ข้อความส่งตรงเข้าห้อง LINE (push) — ไม่บันทึกลงประวัติแชท
+ */
+export async function sendDirectMessage(groupId, text) {
+  try {
+    const res = await axiosInstance.post('/api/messages/send', { groupId, text })
+    return res.data
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'ส่งข้อความไม่สำเร็จ')
+  }
+}
+
+/**
+ * ถาม AI ผู้ช่วยผ่าน dashboard โดยตรง (ไม่ผ่าน LINE) — ไม่บันทึกบทสนทนานี้ลง DB
+ */
+export async function askAssistant(text) {
+  try {
+    const res = await axiosInstance.post('/api/messages/ask', { text })
+    return res.data
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'ถาม AI ไม่สำเร็จ')
+  }
+}
+
+/**
+ * เช็คว่าข้อความที่พิมพ์ในห้องแชทจริงตรงกับคำสั่ง "ค้นหา"/"สรุปเลย" ไหม (สโคปเฉพาะห้องนี้)
+ * คืน { isCommand: false } ถ้าไม่ตรงคำสั่งไหนเลย
+ */
+export async function checkCommand(groupId, text) {
+  try {
+    const res = await axiosInstance.post('/api/messages/command', { groupId, text })
+    return res.data
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'เช็คคำสั่งไม่สำเร็จ')
+  }
+}
+
+/**
  * Get URL for attachment image
  */
 export function getAttachmentUrl(attachmentId) {

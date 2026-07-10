@@ -2,12 +2,14 @@ const express = require('express');
 const router = express.Router();
 const { Message, User, Group, AdminGroup } = require('../models/index');
 
-const { summarizeAllChatsForDate } = require('../services/aiService');
+const { summarizeAllChatsForDate, askQuestion } = require('../services/aiService');
 const { deleteFileFromDrive } = require('../services/driveService');
-const { deleteFromGCS } = require('../services/gcsService');
+const { deleteFromGCS, getSignedUrl } = require('../services/gcsService');
 const { client } = require('../services/lineService');
+const { getSearchKeyword, getSummarizeKeyword, escapeRegex, matchSummarizeCommand, buildSearchReply, buildSummarizeReply } = require('../services/botCommandService');
 const { Op } = require('sequelize');
 const authMiddleware = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/auth');
 
 router.use(authMiddleware);
 
@@ -157,24 +159,10 @@ router.post('/forward', async (req, res) => {
     // หาปลายทางจริงสำหรับ LINE push (DM ต้องตัด prefix private_ ออกเหลือ userId)
     const to = targetGroupId.startsWith('private_') ? targetGroupId.slice('private_'.length) : targetGroupId;
 
-    // หาชื่อกลุ่ม/ผู้ใช้ต้นทาง สำหรับ label กำกับที่มา
-    const first = sourceMessages[0];
-    const sourceIsPrivate = !first.groupId;
-    let sourceName = 'ไม่ทราบที่มา';
-    if (first.groupId) {
-      const group = await Group.findByPk(first.groupId);
-      sourceName = group?.groupName || sourceName;
-    } else {
-      const user = await User.findByPk(first.userId);
-      sourceName = user?.displayName || sourceName;
-    }
-
-    const baseUrl = process.env.BASE_URL || 'https://boonyarit.achalee.com';
-    const mediaUrl = (gcsPath) => `${baseUrl}/api/media?path=${encodeURIComponent(gcsPath)}`;
-
-    const outgoing = [
-      { type: 'text', text: `📩 ส่งต่อจาก${sourceIsPrivate ? '' : 'กลุ่ม'} ${sourceName}` },
-    ];
+    // LINE ต้อง fetch เนื้อหาไฟล์จริงจาก originalContentUrl/previewImageUrl โดยตรง — ใช้ signed GCS URL
+    // ตรงๆ (ไม่ผ่าน /api/media ที่ตอบกลับด้วย 302 redirect เพราะ LINE ไม่ follow redirect แล้วโชว์
+    // เป็นกรอบว่างแทน)
+    const outgoing = [];
 
     for (const m of sourceMessages) {
       switch (m.messageType) {
@@ -184,15 +172,17 @@ router.post('/forward', async (req, res) => {
         case 'image': {
           const paths = m.metadata?.gcsPaths || (m.metadata?.gcsPath ? [m.metadata.gcsPath] : []);
           for (const p of paths) {
-            outgoing.push({ type: 'image', originalContentUrl: mediaUrl(p), previewImageUrl: mediaUrl(p) });
+            const url = await getSignedUrl(p, 60);
+            outgoing.push({ type: 'image', originalContentUrl: url, previewImageUrl: url });
           }
           break;
         }
         case 'audio':
           if (m.metadata?.gcsPath) {
+            const url = await getSignedUrl(m.metadata.gcsPath, 60);
             outgoing.push({
               type: 'audio',
-              originalContentUrl: mediaUrl(m.metadata.gcsPath),
+              originalContentUrl: url,
               duration: m.metadata?.duration || 1000,
             });
           }
@@ -215,7 +205,8 @@ router.post('/forward', async (req, res) => {
           // video, file และประเภทอื่นที่ LINE ไม่มี message type รองรับ (หรือขาด preview) → fallback เป็นลิงก์
           const gcsPath = m.metadata?.gcsPath || m.metadata?.gcsPaths?.[0];
           const label = { video: '🎬 วิดีโอ', file: `📎 ${m.metadata?.fileName || 'ไฟล์'}` }[m.messageType] || '📎 ไฟล์แนบ';
-          outgoing.push({ type: 'text', text: gcsPath ? `${label}: ${mediaUrl(gcsPath)}` : label });
+          const url = gcsPath ? await getSignedUrl(gcsPath, 60) : null;
+          outgoing.push({ type: 'text', text: url ? `${label}: ${url}` : label });
         }
       }
     }
@@ -234,9 +225,99 @@ router.post('/forward', async (req, res) => {
       }
     }
 
-    res.json({ sent, failed, sourceName });
+    res.json({ sent, failed });
   } catch (error) {
     console.error('[ERROR] POST /api/messages/forward:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/messages/send — พิมพ์ข้อความส่งตรงเข้าห้อง LINE (push) จากหน้า dashboard
+// เฉพาะ role superuser/admin เท่านั้น — ไม่บันทึกข้อความนี้ลง DB (เหมือน /forward)
+// body: { groupId, text }
+router.post('/send', requireAdmin, async (req, res) => {
+  try {
+    const { groupId, text } = req.body;
+    if (!groupId || !text || !text.trim()) {
+      return res.status(400).json({ error: 'groupId และ text required' });
+    }
+
+    const to = groupId.startsWith('private_') ? groupId.slice('private_'.length) : groupId;
+    await client.pushMessage(to, { type: 'text', text: text.trim() });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[ERROR] POST /api/messages/send:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/messages/ask — คุยกับ AI ผู้ช่วยแบบ free-form ผ่าน dashboard (ไม่ผ่าน LINE เลย)
+// ใช้กับ DM พิเศษ "AI ผู้ช่วย" เท่านั้น — ไม่ผูกคำสั่งตายตัว ถามอะไรก็ได้ ไม่บันทึกบทสนทนานี้ลง DB
+// body: { text }
+router.post('/ask', async (req, res) => {
+  try {
+    const { text } = req.body;
+    if (!text || !text.trim()) {
+      return res.status(400).json({ error: 'text required' });
+    }
+
+    const result = await askQuestion(text.trim());
+    res.json({ reply: result.text });
+  } catch (error) {
+    console.error('[ERROR] POST /api/messages/ask:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/messages/command — เช็ค+ตอบคำสั่ง "ค้นหา"/"สรุปเลย" ที่พิมพ์ในช่องแชทของกลุ่ม/DM จริง
+// สโคปเฉพาะห้องนั้นห้องเดียว (เหมือนพิมพ์คำสั่งนี้ใน LINE ตรงๆ) — ไม่บันทึกลง DB, ไม่ push เข้า LINE
+// body: { groupId, text } — คืน { isCommand: false } ถ้า text ไม่ตรงคำสั่งไหนเลย (ให้ frontend ไป
+// flow ส่งจริงแทน)
+router.post('/command', async (req, res) => {
+  try {
+    const { groupId, text } = req.body;
+    if (!groupId || !text || !text.trim()) {
+      return res.status(400).json({ error: 'groupId และ text required' });
+    }
+
+    if (req.admin.role === 'user') {
+      const allowed = await getAllowedGroupIds(req.admin.id);
+      if (!allowed.includes(groupId)) {
+        return res.status(403).json({ error: 'ไม่มีสิทธิ์เข้าถึงกลุ่มนี้' });
+      }
+    }
+
+    const searchKeyword = await getSearchKeyword();
+    const searchPattern = new RegExp(`^${escapeRegex(searchKeyword)}\\s+(.+)`, 'u');
+    const searchMatch = text.trim().match(searchPattern);
+
+    const summarizeKeyword = await getSummarizeKeyword();
+    const { isMatch: isSummarizeCommand, daysBack } = matchSummarizeCommand(text, summarizeKeyword);
+
+    if (!searchMatch && !isSummarizeCommand) {
+      return res.json({ isCommand: false });
+    }
+
+    let scopeWhere, roomLabel;
+    if (groupId.startsWith('private_')) {
+      scopeWhere = { userId: groupId.slice('private_'.length), groupId: null };
+      roomLabel = 'ขอบเขต: DM นี้เท่านั้น';
+    } else {
+      scopeWhere = { groupId };
+      const group = await Group.findByPk(groupId);
+      roomLabel = `ขอบเขต: กลุ่ม "${group?.groupName || groupId}" เท่านั้น`;
+    }
+
+    // ค้นหาไม่มีการจำกัดช่วงเวลาเลย (ดูทั้งประวัติของห้องนี้) ต่างจากสรุปที่บอกช่วงวันอยู่แล้วในตัวเอง
+    // เลยต้องบอกเพิ่มเฉพาะฝั่งค้นหาว่าดูทั้งหมดไม่จำกัดวัน กันเข้าใจผิดว่าค้นหาแค่ล่าสุด
+    const reply = searchMatch
+      ? await buildSearchReply(searchMatch[1].trim(), scopeWhere, `${roomLabel}, ไม่จำกัดช่วงเวลา (ค้นหาทั้งหมด)`)
+      : await buildSummarizeReply(daysBack, scopeWhere, roomLabel);
+
+    res.json({ isCommand: true, reply });
+  } catch (error) {
+    console.error('[ERROR] POST /api/messages/command:', error);
     res.status(500).json({ error: error.message });
   }
 });

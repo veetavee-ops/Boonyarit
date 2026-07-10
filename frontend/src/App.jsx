@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { checkAuth, logout, updateProfile } from "./api/auth";
 import { useGroups, useMessages } from "./hooks/useMessages";
 import { useSocket } from "./hooks/useSocket";
-import { summarizeDay, searchMessages, toggleImportant, deleteMessages, forwardMessages } from "./api/messages";
+import { summarizeDay, searchMessages, toggleImportant, deleteMessages, forwardMessages, sendDirectMessage, askAssistant, checkCommand } from "./api/messages";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
@@ -18,6 +18,15 @@ import ChatWindow from "./components/ChatWindow/ChatWindow";
 import SummaryModal from "./components/SummaryModal/SummaryModal";
 import ChangePasswordModal from "./components/ChangePasswordModal/ChangePasswordModal";
 import "./App.css";
+
+// DM พิเศษสำหรับคุยกับ AI ผู้ช่วย — ไม่ใช่กลุ่ม/DM จริงใน LINE ไม่ผ่าน push เลย
+const AI_ASSISTANT_GROUP = {
+  groupId: 'ai-assistant',
+  groupName: '🤖 AI ผู้ช่วย',
+  isPrivate: true,
+  isAiAssistant: true,
+  pictureUrl: null,
+};
 
 export default function App() {
   // ✅ ALL hooks must be declared unconditionally before any early returns
@@ -60,6 +69,8 @@ export default function App() {
   const [daysBack, setDaysBack] = useState(null);
 
   const { groups, loading: groupsLoading } = useGroups(refreshKey);
+  // ไม่ fetch ข้อความจริงสำหรับ DM ปลอม "AI ผู้ช่วย" — บทสนทนานั้นเก็บ local ใน ChatWindow เอง
+  const messagesGroupId = selectedGroup === AI_ASSISTANT_GROUP.groupId ? null : selectedGroup;
   const {
     messages,
     loading: msgsLoading,
@@ -69,7 +80,7 @@ export default function App() {
     addMessage,
     updateMessage,
     removeMessages,
-  } = useMessages(selectedGroup, daysBack);
+  } = useMessages(messagesGroupId, daysBack);
 
   const handleNewMessage = useCallback(
     (newMessage) => {
@@ -105,6 +116,22 @@ export default function App() {
   // ส่งต่อข้อความที่เลือกไปยังกลุ่ม/DM อื่นใน LINE — เรียกจาก ChatWindow ตอนกดยืนยันส่งต่อ
   const handleForwardMessages = async (messageIds, targetGroupId) => {
     return await forwardMessages(messageIds, targetGroupId);
+  };
+
+  // พิมพ์ข้อความส่งตรงเข้าห้อง LINE — เรียกจาก ChatWindow ตอนกดยืนยันส่ง
+  const handleSendDirectMessage = async (groupId, text) => {
+    return await sendDirectMessage(groupId, text);
+  };
+
+  // ถาม AI ผู้ช่วยผ่าน dashboard โดยตรง — เรียกจาก ChatWindow ตอนพิมพ์ใน DM "AI ผู้ช่วย"
+  const handleAskAssistant = async (text) => {
+    return await askAssistant(text);
+  };
+
+  // เช็คว่าข้อความที่พิมพ์ในห้องแชทจริงตรงคำสั่ง "ค้นหา"/"สรุปเลย" ไหม — เรียกจาก ChatWindow ก่อนตัดสินใจ
+  // ว่าจะ push เข้า LINE จริงหรือตอบในเครื่องเฉยๆ
+  const handleCheckCommand = async (groupId, text) => {
+    return await checkCommand(groupId, text);
   };
 
   useEffect(() => {
@@ -249,8 +276,11 @@ export default function App() {
   const uniqueGroups = groupsList.filter(
     (g, i, arr) => arr.findIndex((x) => x.groupId === g.groupId) === i,
   );
-  const currentGroup = uniqueGroups.find((g) => g.groupId === selectedGroup);
-  const privateChats = uniqueGroups.filter((g) => g.isPrivate);
+  const currentGroup =
+    selectedGroup === AI_ASSISTANT_GROUP.groupId
+      ? AI_ASSISTANT_GROUP
+      : uniqueGroups.find((g) => g.groupId === selectedGroup);
+  const privateChats = [AI_ASSISTANT_GROUP, ...uniqueGroups.filter((g) => g.isPrivate)];
   const thCollator = new Intl.Collator("th", { sensitivity: "base", numeric: true });
   const realGroups = uniqueGroups
     .filter((g) => !g.isPrivate)
@@ -396,6 +426,10 @@ export default function App() {
             onDeleteMessages={handleDeleteMessages}
             groups={uniqueGroups}
             onForwardMessages={handleForwardMessages}
+            canSendDirect={['superuser', 'admin'].includes(admin.role)}
+            onSendDirectMessage={handleSendDirectMessage}
+            onAskAssistant={handleAskAssistant}
+            onCheckCommand={handleCheckCommand}
           />
         )}
         <Sidebar

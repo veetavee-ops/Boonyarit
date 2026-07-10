@@ -5,6 +5,20 @@ import MediaGallery from '../MediaGallery/MediaGallery'
 import { fetchImportantMessages } from '../../api/messages'
 import './ChatWindow.css'
 
+// แปลง URL ในข้อความ (คำตอบจาก AI/คำสั่งค้นหา) ให้เป็นลิงก์คลิกได้จริง
+function linkifyText(text) {
+  const parts = (text || '').split(/(https?:\/\/[^\s<>"'[\]]+)/g)
+  return parts.map((part, i) => {
+    if (!/^https?:\/\//.test(part)) return part
+    const url = part.replace(/[.,;:!?'")\]>]+$/, '')
+    return (
+      <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="ai-msg-link">
+        {part}
+      </a>
+    )
+  })
+}
+
 function relativeTime(dateStr) {
   if (!dateStr) return '—';
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -66,6 +80,10 @@ export default function ChatWindow({
   onDeleteMessages,
   groups = [],
   onForwardMessages,
+  canSendDirect = false,
+  onSendDirectMessage,
+  onAskAssistant,
+  onCheckCommand,
 }) {
   const messagesEndRef = useRef(null)
   const containerRef = useRef(null)
@@ -98,16 +116,6 @@ export default function ChatWindow({
     setForwardFocused('cancel')
   }
 
-  // ESC ปิด modal เสมอ (ตาม UX convention ของโปรเจกต์)
-  useEffect(() => {
-    if (!forwardOpen) return
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape' && !forwarding) closeForwardPicker()
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [forwardOpen, forwarding])
-
   const handleForwardMouseDown = () => {
     forwardWasFocusedRef.current = forwardFocused === 'confirm'
   }
@@ -139,6 +147,124 @@ export default function ChatWindow({
     next?.focus()
   }
 
+  // ── พิมพ์ข้อความส่งตรงเข้าห้อง LINE (push) — ไม่บันทึกลงประวัติแชท ──
+  const [composeText, setComposeText] = useState('')
+  const [sendConfirmOpen, setSendConfirmOpen] = useState(false)
+  const [sending, setSending] = useState(false)
+  const [sendFocused, setSendFocused] = useState('cancel') // 'cancel' | 'confirm'
+  const sendWasFocusedRef = useRef(false)
+  const sendCancelBtnRef = useRef(null)
+  const sendConfirmBtnRef = useRef(null)
+
+  const closeSendConfirm = () => {
+    setSendConfirmOpen(false)
+    setSendFocused('cancel')
+  }
+
+  // ── คุยกับ AI ผู้ช่วย (DM ปลอม currentGroup?.isAiAssistant) — local เท่านั้น ไม่บันทึกลง DB ──
+  const [aiMessages, setAiMessages] = useState([])
+  const [aiThinking, setAiThinking] = useState(false)
+
+  const handleAskSubmit = async () => {
+    const question = composeText.trim()
+    if (!question || aiThinking) return
+    setComposeText('')
+    setAiMessages((prev) => [...prev, { role: 'user', text: question }])
+    setAiThinking(true)
+    try {
+      const result = await onAskAssistant?.(question)
+      setAiMessages((prev) => [...prev, { role: 'ai', text: result?.reply || '(ไม่มีคำตอบ)' }])
+    } catch (e) {
+      setAiMessages((prev) => [...prev, { role: 'ai', text: '❌ ' + e.message }])
+    } finally {
+      setAiThinking(false)
+    }
+  }
+
+  // ── คำสั่ง "ค้นหา"/"สรุปเลย" ที่พิมพ์ในห้องแชทจริง — ตอบ local ไม่ push เข้า LINE ไม่บันทึกลง DB ──
+  const [localBubbles, setLocalBubbles] = useState([])
+  const [checkingCommand, setCheckingCommand] = useState(false)
+
+  const handleComposeSubmit = async () => {
+    if (currentGroup?.isAiAssistant) {
+      handleAskSubmit()
+      return
+    }
+    const text = composeText.trim()
+    if (!text || checkingCommand) return
+    setCheckingCommand(true)
+    try {
+      const result = await onCheckCommand?.(currentGroup?.groupId, text)
+      if (result?.isCommand) {
+        setComposeText('')
+        setLocalBubbles((prev) => [...prev, { role: 'user', text }, { role: 'ai', text: result.reply }])
+      } else {
+        setSendConfirmOpen(true)
+      }
+    } catch (e) {
+      alert('เช็คคำสั่งไม่สำเร็จ: ' + e.message)
+    } finally {
+      setCheckingCommand(false)
+    }
+  }
+
+  const handleComposeKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleComposeSubmit()
+      return
+    }
+    if (e.key === 'Escape') {
+      // ESC ตอนกำลังพิมพ์ = ล้างข้อความ + ออกจากช่องพิมพ์ (ไม่ส่งต่อให้ ESC ชั้นอื่นทำงานซ้อน)
+      e.preventDefault()
+      e.stopPropagation()
+      setComposeText('')
+      e.currentTarget.blur()
+    }
+  }
+
+  const handleSendMouseDown = () => {
+    sendWasFocusedRef.current = sendFocused === 'confirm'
+  }
+
+  const handleConfirmSend = async () => {
+    if (!sendWasFocusedRef.current) return // คลิกแรก = แค่ set focus ไม่ยิง action
+    if (!composeText.trim() || sending) return
+    setSending(true)
+    try {
+      await onSendDirectMessage?.(currentGroup?.groupId, composeText.trim())
+      setComposeText('')
+      closeSendConfirm()
+    } catch (e) {
+      alert('ส่งไม่สำเร็จ: ' + e.message)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const handleSendArrowNav = (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    const next = e.target === sendCancelBtnRef.current ? sendConfirmBtnRef.current : sendCancelBtnRef.current
+    next?.focus()
+  }
+
+  // ESC ปิดทีละชั้นจากในสุดออกมา: popup ลบ → popup ส่งต่อ → popup ส่งข้อความ → สื่อ → ข้อความสำคัญ
+  // → โหมดเลือก → (ไม่เหลืออะไรให้ปิดแล้ว ไม่ทำอะไรต่อ)
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key !== 'Escape') return
+      if (confirmDeleteOpen) { if (!deleting) setConfirmDeleteOpen(false); return }
+      if (forwardOpen) { if (!forwarding) closeForwardPicker(); return }
+      if (sendConfirmOpen) { if (!sending) closeSendConfirm(); return }
+      if (showGallery) { setShowGallery(false); return }
+      if (showImportant) { setShowImportant(false); return }
+      if (selectMode) { setSelectMode(false); setSelectedIds(new Set()); return }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [confirmDeleteOpen, deleting, forwardOpen, forwarding, sendConfirmOpen, sending, showGallery, showImportant, selectMode])
+
   const toggleSelectMode = () => {
     setSelectMode((v) => !v)
     setSelectedIds(new Set())
@@ -150,6 +276,22 @@ export default function ChatWindow({
       next.has(id) ? next.delete(id) : next.add(id)
       return next
     })
+  }
+
+  // คลิกขวาที่ข้อความ = เข้าโหมดเลือก + ติ๊กข้อความนั้นให้เลยทันที (ทางลัดไปกดลบ/ส่งต่อต่อ)
+  // การเข้าโหมดเลือกทำให้แถบด้านบน/compose bar ด้านล่างโผล่/หาย → ความสูงของพื้นที่ scroll เปลี่ยน
+  // เลยต้องชดเชย scrollTop ไม่ให้ข้อความที่เพิ่งคลิกขวาเด้งออกจากตำแหน่งเดิมที่เห็น
+  const handleContextMenuSelect = (id, e) => {
+    const el = e?.currentTarget
+    const rectBefore = el?.getBoundingClientRect()
+    setSelectMode(true)
+    setSelectedIds((prev) => new Set(prev).add(id))
+    if (el && containerRef.current) {
+      requestAnimationFrame(() => {
+        const rectAfter = el.getBoundingClientRect()
+        containerRef.current.scrollTop += rectAfter.top - rectBefore.top
+      })
+    }
   }
 
   const handleConfirmDelete = async () => {
@@ -221,6 +363,9 @@ export default function ChatWindow({
     setSelectMode(false)
     setSelectedIds(new Set())
     closeForwardPicker()
+    setComposeText('')
+    closeSendConfirm()
+    setLocalBubbles([])
   }, [currentGroup])
 
   useEffect(() => {
@@ -298,13 +443,15 @@ export default function ChatWindow({
               {currentGroup?.groupName || 'เลือกแชท / กลุ่ม'}
             </h1>
             <p className="group-sub">
-              {currentGroup?.isPrivate ? 'แชทส่วนตัว' : 'กลุ่ม'} · {filtered.length} ข้อความ
+              {currentGroup?.isAiAssistant
+                ? 'ถามได้เลย ไม่บันทึกลงคลังแชท'
+                : `${currentGroup?.isPrivate ? 'แชทส่วนตัว' : 'กลุ่ม'} · ${filtered.length} ข้อความ`}
             </p>
           </div>
         </div>
 
         <div className="header-right">
-          {currentGroup && (
+          {currentGroup && !currentGroup?.isAiAssistant && (
             <>
               <select
                 className="days-back-select"
@@ -350,20 +497,38 @@ export default function ChatWindow({
             </>
           )}
 
-          <div className="search-wrapper">
-            <svg className="search-icon" viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-              <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
-            </svg>
-            <input
-              className="search"
-              placeholder="ค้นหาข้อความ..."
-              value={search}
-              onChange={e => onSearchChange(e.target.value)}
-            />
-          </div>
+          {!currentGroup?.isAiAssistant && (
+            <div className="search-wrapper">
+              <svg className="search-icon" viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+              </svg>
+              <input
+                className="search"
+                placeholder="ค้นหาข้อความ..."
+                value={search}
+                onChange={e => onSearchChange(e.target.value)}
+              />
+            </div>
+          )}
         </div>
       </header>
 
+      {currentGroup?.isAiAssistant ? (
+        <div className="chat-body">
+          <div className="messages ai-assistant-messages">
+            {aiMessages.length === 0 && (
+              <div className="empty">
+                <p>ถามอะไรก็ได้ เช่น "ค้นหา สัญญา" หรือ "สรุปเลย"</p>
+              </div>
+            )}
+            {aiMessages.map((m, i) => (
+              <div key={i} className={`ai-msg ai-msg--${m.role}`}>{linkifyText(m.text)}</div>
+            ))}
+            {aiThinking && <div className="ai-msg ai-msg--ai ai-msg--thinking">กำลังคิด...</div>}
+          </div>
+        </div>
+      ) : (
+      <>
       {/* ── แถบตอนกำลังเลือกข้อความ (select mode) ───────────── */}
       {selectMode && (
         <div className="select-mode-bar">
@@ -511,10 +676,19 @@ export default function ChatWindow({
                   selectMode={selectMode}
                   selected={selectedIds.has(msg.id)}
                   onToggleSelect={() => toggleSelectMessage(msg.id)}
+                  onContextMenuSelect={(e) => handleContextMenuSelect(msg.id, e)}
                 />
               </div>
             )
           })}
+
+          {localBubbles.length > 0 && (
+            <div className="local-bubbles">
+              {localBubbles.map((m, i) => (
+                <div key={i} className={`ai-msg ai-msg--${m.role} ai-msg--local`}>{linkifyText(m.text)}</div>
+              ))}
+            </div>
+          )}
 
           <div ref={messagesEndRef} />
         </div>
@@ -550,6 +724,30 @@ export default function ChatWindow({
             {stats.users} คน
           </div>
         </footer>
+      )}
+      </>
+      )}
+
+      {/* ── กล่องพิมพ์ (ส่งตรงเข้าห้อง LINE หรือถาม AI ผู้ช่วย) ─── */}
+      {currentGroup && !selectMode && !showGallery && !showImportant && !isSearching &&
+        (canSendDirect || currentGroup?.isAiAssistant) && (
+        <div className="compose-bar">
+          <textarea
+            className="compose-input"
+            placeholder={currentGroup?.isAiAssistant ? 'ถามอะไรก็ได้ เช่น "ค้นหา สัญญา" หรือ "สรุปเลย"' : 'พิมพ์ข้อความส่งเข้าห้องนี้ หรือ "ค้นหา ชื่อไฟล์" / "สรุปเลย"...'}
+            rows={1}
+            value={composeText}
+            onChange={(e) => setComposeText(e.target.value)}
+            onKeyDown={handleComposeKeyDown}
+          />
+          <button
+            className="btn-compose-send"
+            disabled={!composeText.trim() || (currentGroup?.isAiAssistant ? aiThinking : checkingCommand)}
+            onClick={handleComposeSubmit}
+          >
+            ส่ง
+          </button>
+        </div>
       )}
 
       {/* ── Confirm Delete Modal ─────────────────────────────── */}
@@ -640,6 +838,42 @@ export default function ChatWindow({
           </div>
         )
       })()}
+
+      {/* ── Confirm Send Modal ───────────────────────────────── */}
+      {sendConfirmOpen && (
+        <div className="drive-overlay" onClick={() => !sending && closeSendConfirm()}>
+          <div className="drive-confirm forward-confirm" onClick={(e) => e.stopPropagation()}>
+            <h3>ยืนยันการส่งข้อความ</h3>
+            <p>ส่งข้อความนี้เข้าห้อง <strong>"{currentGroup?.groupName}"</strong> จริง?</p>
+            <p className="drive-confirm-warn" style={{ whiteSpace: 'pre-wrap', textAlign: 'left' }}>
+              "{composeText}"
+            </p>
+            <p className="drive-confirm-warn">ข้อความจะถูกส่งเข้า LINE ทันที ไม่สามารถเรียกคืนได้</p>
+            <div className="drive-confirm-actions" onKeyDown={handleSendArrowNav}>
+              <button
+                ref={sendCancelBtnRef}
+                className="btn-cancel"
+                autoFocus
+                onFocus={() => setSendFocused('cancel')}
+                onClick={closeSendConfirm}
+                disabled={sending}
+              >
+                ยกเลิก
+              </button>
+              <button
+                ref={sendConfirmBtnRef}
+                className={`btn-forward-confirm${sendFocused === 'confirm' ? ' focused' : ''}`}
+                onFocus={() => setSendFocused('confirm')}
+                onMouseDown={handleSendMouseDown}
+                onClick={handleConfirmSend}
+                disabled={sending}
+              >
+                {sending ? 'กำลังส่ง...' : 'ส่งเลย'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
