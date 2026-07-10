@@ -5,6 +5,7 @@ const { Message, User, Group, AdminGroup } = require('../models/index');
 const { summarizeAllChatsForDate } = require('../services/aiService');
 const { deleteFileFromDrive } = require('../services/driveService');
 const { deleteFromGCS } = require('../services/gcsService');
+const { client } = require('../services/lineService');
 const { Op } = require('sequelize');
 const authMiddleware = require('../middleware/auth');
 
@@ -121,6 +122,121 @@ router.delete('/', async (req, res) => {
     res.json({ deleted: targets.length });
   } catch (error) {
     console.error('[ERROR] DELETE /api/messages:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/messages/forward — ส่งต่อข้อความที่เลือกไปยังกลุ่ม/DM อื่นใน LINE จริง (push message)
+// body: { messageIds: ["uuid", ...], targetGroupId: "groupId หรือ private_<userId>" }
+router.post('/forward', async (req, res) => {
+  try {
+    const { messageIds, targetGroupId } = req.body;
+    if (!Array.isArray(messageIds) || messageIds.length === 0 || !targetGroupId) {
+      return res.status(400).json({ error: 'messageIds และ targetGroupId required' });
+    }
+
+    const messages = await Message.findAll({
+      where: { id: { [Op.in]: messageIds } },
+      order: [['timestamp', 'ASC']],
+    });
+    if (messages.length === 0) {
+      return res.status(404).json({ error: 'ไม่พบข้อความที่เลือก' });
+    }
+
+    // role 'user' ส่งต่อได้เฉพาะระหว่างกลุ่มที่ตัวเองมีสิทธิ์เข้าถึงเท่านั้น (ทั้งต้นทางและปลายทาง)
+    let sourceMessages = messages;
+    if (req.admin.role === 'user') {
+      const allowed = await getAllowedGroupIds(req.admin.id);
+      const allowedSet = new Set(allowed);
+      sourceMessages = messages.filter((m) => allowedSet.has(m.groupId || `private_${m.userId}`));
+      if (sourceMessages.length === 0 || !allowedSet.has(targetGroupId)) {
+        return res.status(403).json({ error: 'ไม่มีสิทธิ์ส่งต่อข้อความนี้' });
+      }
+    }
+
+    // หาปลายทางจริงสำหรับ LINE push (DM ต้องตัด prefix private_ ออกเหลือ userId)
+    const to = targetGroupId.startsWith('private_') ? targetGroupId.slice('private_'.length) : targetGroupId;
+
+    // หาชื่อกลุ่ม/ผู้ใช้ต้นทาง สำหรับ label กำกับที่มา
+    const first = sourceMessages[0];
+    const sourceIsPrivate = !first.groupId;
+    let sourceName = 'ไม่ทราบที่มา';
+    if (first.groupId) {
+      const group = await Group.findByPk(first.groupId);
+      sourceName = group?.groupName || sourceName;
+    } else {
+      const user = await User.findByPk(first.userId);
+      sourceName = user?.displayName || sourceName;
+    }
+
+    const baseUrl = process.env.BASE_URL || 'https://boonyarit.achalee.com';
+    const mediaUrl = (gcsPath) => `${baseUrl}/api/media?path=${encodeURIComponent(gcsPath)}`;
+
+    const outgoing = [
+      { type: 'text', text: `📩 ส่งต่อจาก${sourceIsPrivate ? '' : 'กลุ่ม'} ${sourceName}` },
+    ];
+
+    for (const m of sourceMessages) {
+      switch (m.messageType) {
+        case 'text':
+          outgoing.push({ type: 'text', text: m.text || '' });
+          break;
+        case 'image': {
+          const paths = m.metadata?.gcsPaths || (m.metadata?.gcsPath ? [m.metadata.gcsPath] : []);
+          for (const p of paths) {
+            outgoing.push({ type: 'image', originalContentUrl: mediaUrl(p), previewImageUrl: mediaUrl(p) });
+          }
+          break;
+        }
+        case 'audio':
+          if (m.metadata?.gcsPath) {
+            outgoing.push({
+              type: 'audio',
+              originalContentUrl: mediaUrl(m.metadata.gcsPath),
+              duration: m.metadata?.duration || 1000,
+            });
+          }
+          break;
+        case 'sticker':
+          if (m.metadata?.packageId && m.metadata?.stickerId) {
+            outgoing.push({ type: 'sticker', packageId: m.metadata.packageId, stickerId: m.metadata.stickerId });
+          }
+          break;
+        case 'location':
+          outgoing.push({
+            type: 'location',
+            title: m.metadata?.address || 'ตำแหน่งที่ตั้ง',
+            address: m.metadata?.address || '',
+            latitude: m.metadata?.lat,
+            longitude: m.metadata?.lng,
+          });
+          break;
+        default: {
+          // video, file และประเภทอื่นที่ LINE ไม่มี message type รองรับ (หรือขาด preview) → fallback เป็นลิงก์
+          const gcsPath = m.metadata?.gcsPath || m.metadata?.gcsPaths?.[0];
+          const label = { video: '🎬 วิดีโอ', file: `📎 ${m.metadata?.fileName || 'ไฟล์'}` }[m.messageType] || '📎 ไฟล์แนบ';
+          outgoing.push({ type: 'text', text: gcsPath ? `${label}: ${mediaUrl(gcsPath)}` : label });
+        }
+      }
+    }
+
+    // LINE pushMessage ส่งได้สูงสุด 5 messages ต่อ call → chunk แล้วยิงทีละชุดตามลำดับ
+    let sent = 0;
+    let failed = 0;
+    for (let i = 0; i < outgoing.length; i += 5) {
+      const chunk = outgoing.slice(i, i + 5);
+      try {
+        await client.pushMessage(to, chunk);
+        sent += chunk.length;
+      } catch (e) {
+        console.error('[Forward] pushMessage failed:', e.message);
+        failed += chunk.length;
+      }
+    }
+
+    res.json({ sent, failed, sourceName });
+  } catch (error) {
+    console.error('[ERROR] POST /api/messages/forward:', error);
     res.status(500).json({ error: error.message });
   }
 });

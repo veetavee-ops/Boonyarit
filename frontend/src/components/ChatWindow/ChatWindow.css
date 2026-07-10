@@ -234,3 +234,45 @@
 }
 .btn-confirm-delete:disabled, .btn-cancel:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-confirm-delete:hover:not(:disabled) { background: #b91c1c; }
+
+/* ── Forward picker modal ──────────────────────────────────────── */
+.btn-forward {
+  padding: 7px 14px; border-radius: 20px; border: none;
+  background: #2563eb; color: white; cursor: pointer; font-weight: 600;
+  font-size: 13px; font-family: 'Kanit', sans-serif;
+}
+.btn-forward:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-forward:hover:not(:disabled) { background: #1d4ed8; }
+
+.forward-confirm { max-width: 420px; text-align: left; }
+.forward-confirm h3 { text-align: center; }
+.forward-search-input {
+  width: 100%; box-sizing: border-box; padding: 8px 12px; margin: 10px 0;
+  border: 1px solid var(--border-color); border-radius: 10px;
+  background: var(--bg-surface); color: var(--text-primary);
+  font-family: 'Kanit', sans-serif; font-size: 13px;
+}
+.forward-group-list { max-height: 260px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.forward-group-item {
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+  border-radius: 10px; cursor: pointer; border: 1px solid transparent;
+}
+.forward-group-item:hover { background: var(--bg-surface); }
+.forward-group-item.selected { background: rgba(37,99,235,0.1); border-color: #2563eb; }
+.forward-group-avatar {
+  width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; color: white; object-fit: cover;
+}
+.forward-group-name { font-size: 13px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.forward-empty { text-align: center; font-size: 13px; color: var(--text-secondary); padding: 20px 0; }
+.forward-target-label { font-size: 12px; color: var(--text-secondary); margin: 4px 0 0; text-align: center; }
+
+.btn-forward-confirm {
+  padding: 9px 18px; border-radius: 10px; border: none;
+  background: #2563eb; color: white; cursor: pointer; font-weight: 600;
+  font-family: 'Kanit', sans-serif; transition: opacity 0.15s ease, transform 0.15s ease;
+  opacity: 0.3;
+}
+.btn-forward-confirm.focused { opacity: 1; transform: scale(1.05); }
+.btn-forward-confirm:disabled { opacity: 0.3 !important; cursor: not-allowed; transform: none; }

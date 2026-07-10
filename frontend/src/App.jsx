@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { checkAuth, logout, updateProfile } from "./api/auth";
 import { useGroups, useMessages } from "./hooks/useMessages";
 import { useSocket } from "./hooks/useSocket";
-import { summarizeDay, searchMessages, toggleImportant, deleteMessages } from "./api/messages";
+import { summarizeDay, searchMessages, toggleImportant, deleteMessages, forwardMessages } from "./api/messages";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
@@ -100,6 +100,11 @@ export default function App() {
   const handleDeleteMessages = async (messageIds) => {
     await deleteMessages(messageIds);
     removeMessages(messageIds);
+  };
+
+  // ส่งต่อข้อความที่เลือกไปยังกลุ่ม/DM อื่นใน LINE — เรียกจาก ChatWindow ตอนกดยืนยันส่งต่อ
+  const handleForwardMessages = async (messageIds, targetGroupId) => {
+    return await forwardMessages(messageIds, targetGroupId);
   };
 
   useEffect(() => {
@@ -389,6 +394,8 @@ export default function App() {
             daysBack={daysBack}
             onDaysBackChange={setDaysBack}
             onDeleteMessages={handleDeleteMessages}
+            groups={uniqueGroups}
+            onForwardMessages={handleForwardMessages}
           />
         )}
         <Sidebar

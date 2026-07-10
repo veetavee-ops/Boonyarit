@@ -64,6 +64,8 @@ export default function ChatWindow({
   daysBack,
   onDaysBackChange,
   onDeleteMessages,
+  groups = [],
+  onForwardMessages,
 }) {
   const messagesEndRef = useRef(null)
   const containerRef = useRef(null)
@@ -78,6 +80,64 @@ export default function ChatWindow({
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  // ── ส่งต่อข้อความที่เลือกไปยังกลุ่ม/DM อื่น ──
+  const [forwardOpen, setForwardOpen] = useState(false)
+  const [forwardSearch, setForwardSearch] = useState('')
+  const [forwardTargetId, setForwardTargetId] = useState(null)
+  const [forwarding, setForwarding] = useState(false)
+  const [forwardFocused, setForwardFocused] = useState('cancel') // 'cancel' | 'confirm'
+  const forwardWasFocusedRef = useRef(false)
+  const cancelBtnRef = useRef(null)
+  const forwardBtnRef = useRef(null)
+
+  const closeForwardPicker = () => {
+    setForwardOpen(false)
+    setForwardTargetId(null)
+    setForwardSearch('')
+    setForwardFocused('cancel')
+  }
+
+  // ESC ปิด modal เสมอ (ตาม UX convention ของโปรเจกต์)
+  useEffect(() => {
+    if (!forwardOpen) return
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape' && !forwarding) closeForwardPicker()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [forwardOpen, forwarding])
+
+  const handleForwardMouseDown = () => {
+    forwardWasFocusedRef.current = forwardFocused === 'confirm'
+  }
+
+  const handleConfirmForward = async () => {
+    if (!forwardWasFocusedRef.current) return // คลิกแรก = แค่ set focus ไม่ยิง action
+    if (!forwardTargetId || forwarding) return
+    setForwarding(true)
+    try {
+      const result = await onForwardMessages?.([...selectedIds], forwardTargetId)
+      alert(
+        `ส่งต่อสำเร็จ ${result?.sent || 0} ข้อความ` +
+        (result?.failed ? ` (${result.failed} รายการไม่สำเร็จ)` : '')
+      )
+      closeForwardPicker()
+      setSelectedIds(new Set())
+      setSelectMode(false)
+    } catch (e) {
+      alert('ส่งต่อไม่สำเร็จ: ' + e.message)
+    } finally {
+      setForwarding(false)
+    }
+  }
+
+  const handleForwardArrowNav = (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+    e.preventDefault()
+    const next = e.target === cancelBtnRef.current ? forwardBtnRef.current : cancelBtnRef.current
+    next?.focus()
+  }
 
   const toggleSelectMode = () => {
     setSelectMode((v) => !v)
@@ -160,6 +220,7 @@ export default function ChatWindow({
     setShowImportant(false)
     setSelectMode(false)
     setSelectedIds(new Set())
+    closeForwardPicker()
   }, [currentGroup])
 
   useEffect(() => {
@@ -309,6 +370,13 @@ export default function ChatWindow({
           <span className="select-mode-count">เลือกแล้ว {selectedIds.size} ข้อความ</span>
           <div className="select-mode-actions">
             <button className="btn-cancel" onClick={toggleSelectMode}>ยกเลิก</button>
+            <button
+              className="btn-forward"
+              disabled={selectedIds.size === 0}
+              onClick={() => setForwardOpen(true)}
+            >
+              ส่งต่อ ({selectedIds.size})
+            </button>
             <button
               className="btn-confirm-delete"
               disabled={selectedIds.size === 0}
@@ -503,6 +571,75 @@ export default function ChatWindow({
           </div>
         </div>
       )}
+
+      {/* ── Forward Picker Modal ──────────────────────────────── */}
+      {forwardOpen && (() => {
+        const candidates = groups.filter((g) => {
+          if (g.groupId === currentGroup?.groupId) return false
+          if (!forwardSearch.trim()) return true
+          return g.groupName?.toLowerCase().includes(forwardSearch.trim().toLowerCase())
+        })
+        const target = groups.find((g) => g.groupId === forwardTargetId)
+
+        return (
+          <div className="drive-overlay" onClick={() => !forwarding && closeForwardPicker()}>
+            <div className="drive-confirm forward-confirm" onClick={(e) => e.stopPropagation()}>
+              <h3>ส่งต่อไปยัง...</h3>
+              <input
+                className="forward-search-input"
+                placeholder="ค้นหากลุ่ม/ผู้ใช้..."
+                value={forwardSearch}
+                onChange={(e) => setForwardSearch(e.target.value)}
+              />
+              <div className="forward-group-list">
+                {candidates.length === 0 ? (
+                  <div className="forward-empty">ไม่พบกลุ่ม/ผู้ใช้</div>
+                ) : (
+                  candidates.map((g) => (
+                    <div
+                      key={g.groupId}
+                      className={`forward-group-item${g.groupId === forwardTargetId ? ' selected' : ''}`}
+                      onClick={() => setForwardTargetId(g.groupId)}
+                    >
+                      {g.pictureUrl ? (
+                        <img className="forward-group-avatar" src={g.pictureUrl} alt={g.groupName} />
+                      ) : (
+                        <div className="forward-group-avatar" style={{ background: getColor(g.groupName) }}>
+                          {getInitials(g.groupName)}
+                        </div>
+                      )}
+                      <span className="forward-group-name">{g.groupName}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+              {target && <p className="forward-target-label">ส่งต่อ {selectedIds.size} ข้อความ ไปยัง "{target.groupName}"</p>}
+              <div className="drive-confirm-actions" onKeyDown={handleForwardArrowNav}>
+                <button
+                  ref={cancelBtnRef}
+                  className="btn-cancel"
+                  autoFocus
+                  onFocus={() => setForwardFocused('cancel')}
+                  onClick={closeForwardPicker}
+                  disabled={forwarding}
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  ref={forwardBtnRef}
+                  className={`btn-forward-confirm${forwardFocused === 'confirm' ? ' focused' : ''}`}
+                  onFocus={() => setForwardFocused('confirm')}
+                  onMouseDown={handleForwardMouseDown}
+                  onClick={handleConfirmForward}
+                  disabled={!forwardTargetId || forwarding}
+                >
+                  {forwarding ? 'กำลังส่งต่อ...' : 'ส่งต่อ'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </main>
   )
 }

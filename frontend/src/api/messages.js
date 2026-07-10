@@ -93,6 +93,18 @@ export async function deleteMessages(messageIds) {
 }
 
 /**
+ * ส่งต่อข้อความที่เลือกไปยังกลุ่ม/DM อื่นใน LINE จริง (push message)
+ */
+export async function forwardMessages(messageIds, targetGroupId) {
+  try {
+    const res = await axiosInstance.post('/api/messages/forward', { messageIds, targetGroupId })
+    return res.data
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'ส่งต่อไม่สำเร็จ')
+  }
+}
+
+/**
  * Get URL for attachment image
  */
 export function getAttachmentUrl(attachmentId) {
