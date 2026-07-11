@@ -301,6 +301,12 @@
   border-radius: 6px;
 }
 
+/* กระโดดมาจากผลค้นหา — สีเหลืองทั้งข้อความ ค้างไว้ไม่จาง ตัดกับคำที่ค้น (.search-highlight สีส้ม) ให้เห็นชัด */
+.highlight-search-target {
+  background: rgba(250, 204, 21, 0.35);
+  border-radius: 6px;
+}
+
 /* ─── Images Grid ─────────────────────────────────────────────────────────── */
 .msg-images {
   display: grid;

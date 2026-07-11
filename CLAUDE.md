@@ -31,7 +31,69 @@
 
 ## Session Status
 
-### อัพเดท: 10 กรกฎาคม 2569 (session 13)
+### อัพเดท: 11 กรกฎาคม 2569 (session 14)
+
+### ✅ Session 14 — ค้นหาครอบคลุมข้อความ + ค้นหาDB + กระโดดไปข้อความ/ห้องแชทจริง + ไฮไลต์คำค้น (11 ก.ค. 69)
+
+**แก้ AI ผู้ช่วยหลอกข้อมูลตอน fallback (สืบต่อจาก session 13):**
+- ทดสอบจริงแล้วพบ root cause ที่แท้จริง: prompt เดิมสั่งโมเดล fallback (`llama-3.3-70b-versatile`, ไม่มี
+  web search) ว่า "ให้ค้นเว็บจริง" ทั้งที่มันทำไม่ได้ — ทำให้มันสับสนแล้วมั่วตัวเลข+อ้างแหล่งข้อมูลปลอม
+  (เช่น "จาก Yahoo Finance") แทนที่จะบอกว่าไม่รู้ อันตรายกว่า placeholder แบบ `XXXX.XX` เพราะดูน่าเชื่อถือ
+- แก้ (`aiService.js` `askQuestion`): แยก prompt เป็น 2 ชุด — `searchPrompt` (สั่งค้นเว็บ, ใช้กับ
+  `compound-mini`) กับ `noSearchPrompt` (บอกตรงๆ ว่าไม่มีเน็ต ห้ามเดา ให้ปฏิเสธคำถามเรียลไทม์ไปเลย, ใช้
+  ตอน fallback) — ทดสอบซ้ำแล้ว fallback ตอบ "ระบบค้นข้อมูลขัดข้องชั่วคราว" แทนการมั่วถูกต้อง
+- พบเพิ่ม: `compound-mini` error 413 (payload too large) เกิดบ่อยพอๆ กับ 429 (ไม่เคยเจอ 413 มาก่อน)
+
+**🆕 คำสั่ง "ค้นหาDB xxxx" — ค้นข้ามห้อง/กลุ่มทั้งหมด:**
+- ต่างจาก "ค้นหา" เดิมที่ scope แค่ห้องเดียว — ใช้ได้ทั้งพิมพ์ในห้องแชทจริง (`/api/messages/command`)
+  และใน DM "AI ผู้ช่วย" (`/api/messages/ask`, ดักก่อนส่งเข้า LLM free-form)
+- สิทธิ์: role `superuser`/`admin` ค้นทั้งระบบ (`scopeWhere = {}`), role `user` ค้นได้เฉพาะกลุ่มที่ตัวเอง
+  มีสิทธิ์ผ่าน `AdminGroup` เท่านั้น (`getSearchDbScope()` helper ใหม่ใน `routes/messages.js`) — กันไม่ให้
+  role ต่ำเห็นไฟล์/ข้อความของกลุ่มที่ไม่มีสิทธิ์เข้าถึง
+
+**🆕 แก้บั๊กค้นหาเดิม — ค้นได้แค่ "ชื่อไฟล์" ไม่เคยค้น "เนื้อหาข้อความ" เลย:**
+- `buildSearchReply()` (`botCommandService.js`) เดิม hardcode `messageType: 'file'` ตั้งแต่แรก — ตอนนี้
+  ค้นทั้งชื่อไฟล์ (ILIKE `metadata->>'fileName'`) และเนื้อหาข้อความ (ILIKE `text`) พร้อมกัน ผลรวมกันเรียง
+  ตามเวลาล่าสุด — กระทบทุกทางที่เรียกใช้ฟังก์ชันนี้พร้อมกัน (คำสั่ง "ค้นหา" ในห้องจริง, "ค้นหาDB" ใหม่,
+  คำสั่ง "ค้นหา" ผ่าน LINE จริงใน `webhook.js`)
+- แก้พรีวิวข้อความยาวๆ ให้ตัดช่วงที่ "ล้อมรอบคำค้น" แทนตัดจากตัวอักษรแรกเสมอ (`buildPreviewSnippet()`) —
+  เดิมถ้าคำค้นอยู่ลึกในข้อความยาวเกิน 150 ตัวอักษร พรีวิวจะไม่โชว์คำค้นเลย
+
+**🆕 Popup "กระโดดไปข้อความ" + เข้าห้องแชทจริงตรงๆ:**
+- ผลค้นหาข้อความมีลิงก์ 2 แบบ: 🔗 เปิดดูตัวอย่างใน popup (25 ข้อความก่อนหน้า + ตัวเอง + 25 หลัง, อ่าน
+  อย่างเดียว) และ 📂 ชื่อกลุ่ม (คลิกเข้าห้องแชทจริงทันที ไม่ผ่าน popup) — ทั้งคู่ scroll+ไฮไลต์ไปยัง
+  ข้อความเป้าหมายอัตโนมัติ
+- Endpoint ใหม่ `GET /api/messages/context/:messageId` — หา groupId เองจาก messageId (ไม่ต้องส่งมา) +
+  เช็คสิทธิ์จากห้องจริงที่ข้อความสังกัดอยู่ (role `user` เข้าห้องที่ไม่มีสิทธิ์ไม่ได้ 403)
+- Component ใหม่ `MessageJumpModal` (popup อ่านอย่างเดียว, reuse `MessageBubble`) + แก้ `useMessages` hook
+  ให้รับ `jumpToMessageId` param (โหลด "รอบๆ ข้อความนี้" แทน "ล่าสุด" ตอนสลับกลุ่มแบบปกติ)
+- ไฮไลต์คำค้น: คำที่เจอเป็นสีส้ม (`.search-highlight`, opacity เพิ่มจาก 0.25 → 0.55 ให้เห็นชัด) ทั้ง
+  ข้อความจริงในห้องแชท (ไม่ใช่แค่ preview ของบับเบิลผลค้นหา) + ทั้งข้อความ (bubble) เป้าหมายเป็นสีเหลือง
+  ค้างไว้ (`.highlight-search-target`, ไม่จางหาย — ผู้ใช้ฟีดแบ็กว่า flash animation เดิมหายเร็วเกินไป)
+  ตัดกันให้เห็นชัดว่าอยู่ตรงไหน
+- ส่ง `linkifyText()` (`ChatWindow.jsx`) รองรับ syntax ใหม่ `[label](url)` (ลิงก์มีข้อความกำกับ แทนโชว์
+  URL ดิบ) และ `**text**` (ไฮไลต์) — เป็น mini-parser ทั่วไป ใช้ต่อกับ reply รูปแบบอื่นได้ในอนาคต
+
+**บั๊ก UX ที่ผู้ใช้ทดสอบจริงแล้วเจอ + แก้:**
+1. Highlight สีเหลืองจางหายเร็วเกินไป (2.5s) — เอา `setTimeout` ลบ class ออก ให้ค้างไว้แทน
+2. คลิก "เข้าห้องแชทนี้เลย" (จาก popup หรือจากลิงก์ 📂 ในผลค้นหา) ไม่เลื่อนไปหาข้อความเป้าหมายเลย ทั้งที่
+   popup (โครงสร้างง่ายกว่า) ทำงานได้ — สงสัยว่า logic เดิมค้นหา element ด้วย `document.querySelector`
+   **แค่ครั้งเดียว** ตอน effect รัน พอจังหวะสลับจาก DM "AI ผู้ช่วย" ไปห้องแชทจริง (สลับ conditional
+   render ทั้งชุด ไม่ใช่แค่ข้อมูลเปลี่ยน) DOM อาจยังไม่ทันขึ้น element ก็หาไม่เจอแล้วไม่ลองซ้ำอีกเลย —
+   แก้ด้วย `scrollToAndHighlightMessage()` helper ใหม่ใน `utils/helpers.js` ที่ลองซ้ำเองทุก 50ms นาน
+   สูงสุด 2 วินาทีจนกว่าจะเจอ ใช้ร่วมกันทั้ง popup และห้องแชทจริง (**ยังไม่ได้ยืนยันจาก user ว่าแก้ผ่าน
+   จริงหลังรอบสุดท้ายนี้ — ต้องถามผลตอน session หน้า**)
+
+**ไฟล์ที่แก้/สร้างรอบนี้**: `backend/services/aiService.js` (แยก search/noSearch prompt),
+`backend/services/botCommandService.js` (ค้นข้อความ+ไฟล์, highlight marker, direct/preview link,
+วันที่+เวลา), `backend/routes/messages.js` (+`getSearchDbScope`, +`GET /context/:messageId`, wiring
+"ค้นหาDB" ใน `/ask` และ `/command`), `frontend/src/api/messages.js` (+`fetchMessageContext`),
+`frontend/src/hooks/useMessages.js` (+`jumpToMessageId` param), `frontend/src/utils/helpers.js`
+(+`scrollToAndHighlightMessage`), `frontend/src/components/ChatWindow/ChatWindow.jsx` (`linkifyText`
+เขียนใหม่ทั้งหมด, jump effect แยกต่างหาก), `frontend/src/components/MessageBubble/MessageBubble.jsx`
++ `.css` (+`highlightKeyword` prop, `.highlight-search-target`), `frontend/src/components/
+MessageJumpModal/` (ใหม่ทั้งคู่), `frontend/src/App.jsx` (state wiring `chatJumpMessageId` /
+`highlightKeyword` / `handleOpenMessageInChat`)
 
 ### ✅ Session 13 — ส่งต่อ/ส่งตรงเข้า LINE + AI ผู้ช่วย + คำสั่งค้นหา/สรุปใน dashboard (10 ก.ค. 69)
 
@@ -401,20 +463,24 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
 
 ### 🟡 ถัดไป
 
-1. **🔴 push ขึ้น origin** — local นำหน้า origin/main อยู่ (เพิ่มขึ้นอีกหลัง commit งาน session 13)
-   ยังไม่เคย push รอบนี้เลย
-2. **ทดสอบ AI ผู้ช่วยเรื่องข้อมูลเรียลไทม์เพิ่ม** — เพิ่งสลับ `askQuestion()` ไปใช้ `groq/compound-mini`
-   + tune prompt กัน placeholder หลอกแล้ว แต่ยังไม่ยืนยันชัดว่าค้นเว็บได้จริงสม่ำเสมอ (ทดสอบราคาหุ้นรอบ
-   ล่าสุดตอบ "หาไม่เจอ" — ต้องลองคำถามเรียลไทม์แบบอื่นเพิ่ม เช่น ข่าว/อัตราแลกเปลี่ยน ดูว่า tool ค้นเว็บ
-   ทำงานจริงไหม หรือแค่โมเดลตอบซื่อขึ้นแต่ยังค้นไม่สำเร็จ)
+1. **ยืนยันผลทดสอบฟีเจอร์กระโดดไปข้อความ/ห้องแชทจริง (session 14)** — user เจอบั๊ก 2 รอบระหว่างทดสอบ
+   จริง (highlight จางเร็ว, ไม่เลื่อนไปเป้าหมายตอนเข้าห้องแชทตรง) แก้ไปแล้วด้วย `scrollToAndHighlight
+   Message()` แบบลองซ้ำ แต่**ยังไม่ได้รับการยืนยันจาก user ว่าผ่านจริงหลังแก้รอบสุดท้าย** — ถามผลตอน
+   session หน้าก่อนถือว่าเสร็จ
+2. **ทดสอบ AI ผู้ช่วยเรื่องข้อมูลเรียลไทม์เพิ่ม** — session 14 เจอ error 413 (payload too large) จาก
+   `compound-mini` บ่อยพอๆ กับ 429 (เจอครั้งแรก) แก้ prompt fallback ไม่ให้หลอกข้อมูลแล้ว แต่ยังไม่ได้
+   เช็คว่าทำไม `compound-mini` ถึง error 413 บ่อย (payload สั้นมาก ไม่ควรเกิน limit ปกติ)
 3. **จับตา rate limit ของ `groq/compound-mini`** — ต่ำกว่าโมเดลปกติเยอะ (ต้องค้นเว็บจริงทุกครั้ง) ถ้าใช้
-   งานจริงบ่อยอาจโดน 429 ถี่ — ยังไม่ได้เช็ค tier/quota จริงใน Groq Console
+   งานจริงบ่อยอาจโดน 429/413 ถี่ — ยังไม่ได้เช็ค tier/quota จริงใน Groq Console
 4. **ทดสอบฟีเจอร์ตรวจสอบการโอนเงินกับรูปจริงผ่าน LINE** — เปิดธง `isPaymentVerifyGroup` ให้กลุ่มทดสอบก่อน แล้วลองส่ง 2 รูปจริง (ยังทดสอบแค่ logic/DB/API ผ่าน HTTP เท่านั้น ยังไม่เคยทดสอบผ่าน LINE จริง)
 5. **แก้ Gemini API billing** — เข้า https://aistudio.google.com/apikey เช็ค project ที่สร้าง key แล้วผูก billing account ให้ปลดล็อก free tier (ตอนนี้ `askQuestion` เลิกพึ่ง Gemini ไปแล้ว แต่ฟีเจอร์อื่น เช่น อ่านสลิป ยังใช้ Gemini เป็นหลักอยู่)
 6. **SMTP สำหรับฟีเจอร์ลืมรหัสผ่าน** — ยังไม่ได้ตั้งค่า รอ Gmail + App Password จากคุณ
 7. **tax-ocr Drive cleanup** — ลบ CLAUDE.md 4 อัน (keep `1BUdruo8dnxxXibPUNCegEoJiraxujWAo`) + ลบ .env 2 อัน (keep `1e2288av9H0RRX2yjgMyhxXCIIfAWGDha`) รอ user confirm
 8. **root misplaced files** — `gdrive.md` + `start.md` ในรากของ Drive ควรย้ายเข้า `_claude-skills` หรือปล่อยไว้ รอ user confirm
 9. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`
+10. **Popup กระโดดไปข้อความ ไม่มี forward-pagination** — ถ้าเลื่อนดูเกิน 25 ข้อความ "หลังจาก" เป้าหมาย
+    จะไม่มีปุ่มโหลดเพิ่มถัดไป ต้องออกจากห้องแล้วเข้าใหม่แบบปกติถ้าอยากดู "ล่าสุด" จริงๆ — ยังไม่ทำ ไม่ใช่
+    เรื่องเร่งด่วน
 
 ### 🔑 docker compose restart ไม่โหลด .env ใหม่
 
@@ -483,3 +549,29 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
 > ตัวเอง — งานอ่านรูปใช้ตัวมีตา (Gemini/Llama Scout), งานต้องการข้อมูลเรียลไทม์ใช้ตัวค้นเว็บได้
 > (`groq/compound`/`compound-mini`), งานสรุป/ตอบทั่วไปใช้ตัว versatile ธรรมดา (เร็ว ถูกกว่า ไม่มี
 > quota จำกัดโหดเท่าตัวที่ต้องค้นเว็บ)
+
+### 🔑 บอกโมเดล fallback (ไม่มี tool) ว่า "ไม่มีเน็ต" ตรงๆ — อย่าใช้ prompt เดียวกับตัวหลัก
+
+> ถ้างานหนึ่งมีโมเดลหลักที่ค้นเว็บได้ (เช่น `compound-mini`) กับโมเดล fallback ที่ไม่มี web search
+> (เช่น `llama-3.3-70b-versatile`) **ห้ามใช้ prompt เดียวกันสั่งทั้งคู่ว่า "ให้ค้นเว็บ"** — โมเดล
+> fallback จะสับสนว่าตัวเองค้นได้ แล้วมั่วคำตอบ+อ้างแหล่งข้อมูลปลอมขึ้นมาเอง (อันตรายกว่า placeholder
+> เพราะดูน่าเชื่อถือ) **กฎ**: ต้องมี prompt แยกสำหรับ fallback ที่บอกตรงๆ ว่า "ไม่มีการเชื่อมต่อ
+> อินเทอร์เน็ต ไม่สามารถค้นข้อมูลได้" แล้วสั่งให้ปฏิเสธคำถามที่ต้องการข้อมูลเรียลไทม์ไปเลย แทนที่จะ
+> พยายามตอบ
+
+### 🔑 ฟีเจอร์ "ค้นหา" ต้องเช็คด้วยว่าครอบคลุมข้อมูลที่ผู้ใช้คาดหวังจริงไหม ไม่ใช่แค่ทำงานได้
+
+> `buildSearchReply()` เขียนไว้ตั้งแต่ session 13 แต่ hardcode `messageType: 'file'` ตั้งแต่แรก — ค้นได้
+> แค่ชื่อไฟล์ ไม่เคยค้นเนื้อหาข้อความแชทเลย ทำงานได้ปกติไม่มี error เลยไม่มีใครสังเกตจนกว่า user จะลอง
+> ค้นคำพูดจริงๆ **กฎ**: เวลาทำฟีเจอร์ค้นหา/กรองข้อมูล ให้เช็คกับผู้ใช้หรือทวนความคาดหวังว่า "ค้นอะไรได้
+> บ้าง" ให้ชัดเจนตั้งแต่ตอนออกแบบ ไม่ใช่แค่เช็คว่า query รันผ่านไม่ error
+
+### 🔑 หา DOM element ด้วย querySelector ครั้งเดียวไม่พอ ถ้ามีการสลับ conditional render ซับซ้อน
+
+> ฟีเจอร์ "กระโดดไปข้อความ" ตอนเปิดจาก popup (render ข้อความตรงๆ ไม่มีเงื่อนไขซับซ้อน) หา element
+> ด้วย `document.querySelector('[data-id="..."]')` ครั้งเดียวก็เจอ แต่ตอนกระโดดเข้าห้องแชทจริง (ต้อง
+> สลับ branch การ render ทั้งชุด เช่น จาก DM "AI ผู้ช่วย" ไปห้องแชทปกติ) จังหวะที่ effect รันอาจเร็ว
+> กว่า DOM จริงขึ้นมา ทำให้หาไม่เจอแล้วไม่ลองซ้ำอีกเลย **กฎ**: เวลาต้อง scroll/highlight ไปยัง element
+> ที่เพิ่งจะถูก mount จากการเปลี่ยน state ใหญ่ๆ (สลับกลุ่ม/หน้า) ให้ใช้ retry pattern (เช่น
+> `scrollToAndHighlightMessage()` ใน `utils/helpers.js` ที่ลองซ้ำทุก 50ms นานสูงสุด 2 วินาที) แทนการหา
+> ครั้งเดียวแล้วยอมแพ้เลย

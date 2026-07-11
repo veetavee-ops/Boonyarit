@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { fetchMessages, fetchGroups } from '../api/messages'
+import { fetchMessages, fetchGroups, fetchMessageContext } from '../api/messages'
 
 // Groups: no date filter — always returns all groups/private chats
 export function useGroups(refreshKey = 0) {
@@ -27,7 +27,9 @@ export function useGroups(refreshKey = 0) {
 
 // Messages: fetch with pagination
 // sinceDays: จำกัดให้โหลดแค่ N วันย้อนหลัง (null = โหลดทั้งหมดแบบเดิม ไม่จำกัดวัน)
-export function useMessages(groupId, sinceDays = null) {
+// jumpToMessageId: ถ้ามี — โหลดข้อความรอบๆ ข้อความนี้แทน "ล่าสุด" ปกติ (ใช้ตอนกดลิงก์ผลค้นหา
+// แล้วเลือก "เข้าห้องแชทนี้เลย" จาก popup กระโดดไปข้อความ)
+export function useMessages(groupId, sinceDays = null, jumpToMessageId = null) {
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(false)
 
@@ -44,11 +46,21 @@ export function useMessages(groupId, sinceDays = null) {
     setLoading(true)
     setHasMore(true) // reset on group change
 
-    fetchMessages({ groupId, limit, sinceDays })
-      .then(data => {
+    const request = jumpToMessageId
+      ? fetchMessageContext(jumpToMessageId, 25).then(({ messages, hasMoreBefore }) => ({
+          data: messages,
+          hasMore: hasMoreBefore,
+        }))
+      : fetchMessages({ groupId, limit, sinceDays }).then(data => ({
+          data,
+          hasMore: data.length === limit,
+        }))
+
+    request
+      .then(({ data, hasMore }) => {
         if (!cancelled) {
           setMessages(data)
-          setHasMore(data.length === limit)
+          setHasMore(hasMore)
           setLoading(false)
         }
       })
@@ -62,7 +74,7 @@ export function useMessages(groupId, sinceDays = null) {
       })
 
     return () => { cancelled = true }
-  }, [groupId, sinceDays])
+  }, [groupId, sinceDays, jumpToMessageId])
 
   const loadMore = useCallback(async () => {
     if (!groupId || loadingMore || !hasMore || messages.length === 0) return

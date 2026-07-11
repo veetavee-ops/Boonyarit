@@ -17,6 +17,7 @@ import SummarySidebar from "./components/SummarySidebar/SummarySidebar";
 import ChatWindow from "./components/ChatWindow/ChatWindow";
 import SummaryModal from "./components/SummaryModal/SummaryModal";
 import ChangePasswordModal from "./components/ChangePasswordModal/ChangePasswordModal";
+import MessageJumpModal from "./components/MessageJumpModal/MessageJumpModal";
 import "./App.css";
 
 // DM พิเศษสำหรับคุยกับ AI ผู้ช่วย — ไม่ใช่กลุ่ม/DM จริงใน LINE ไม่ผ่าน push เลย
@@ -50,6 +51,15 @@ export default function App() {
   const [showDaySummary, setShowDaySummary] = useState(false);
   const [showDriveFiles, setShowDriveFiles] = useState(false);
   const [showPaymentVerification, setShowPaymentVerification] = useState(false);
+  // popup "กระโดดไปข้อความ" — เปิดจากลิงก์ผลค้นหาข้อความ
+  const [jumpMessageId, setJumpMessageId] = useState(null);
+  // กด "เข้าห้องแชทนี้เลย" ใน popup ด้านบน — ให้ ChatWindow โหลดข้อความรอบๆ ข้อความนี้แทน "ล่าสุด"
+  // แล้ว scroll+ไฮไลต์ไปหามัน (เคลียร์ทุกครั้งที่สลับกลุ่มด้วยวิธีปกติ กันค้างข้ามห้อง)
+  const [chatJumpMessageId, setChatJumpMessageId] = useState(null);
+  // คำค้นที่ใช้ไฮไลต์คำในข้อความจริง (ไม่ใช่แค่ในพรีวิวบับเบิลผลค้นหา) — คู่กับ jumpMessageId/
+  // chatJumpMessageId ด้านบน ใช้ร่วมกันได้เพราะ MessageBubble จะไฮไลต์ก็ต่อเมื่อ msg.id ตรงกับ
+  // เป้าหมายเท่านั้น (ดู ChatWindow.jsx / MessageJumpModal.jsx)
+  const [highlightKeyword, setHighlightKeyword] = useState(null);
   const [daySummary, setDaySummary] = useState(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [summaryError, setSummaryError] = useState(null);
@@ -80,7 +90,7 @@ export default function App() {
     addMessage,
     updateMessage,
     removeMessages,
-  } = useMessages(messagesGroupId, daysBack);
+  } = useMessages(messagesGroupId, daysBack, chatJumpMessageId);
 
   const handleNewMessage = useCallback(
     (newMessage) => {
@@ -132,6 +142,16 @@ export default function App() {
   // ว่าจะ push เข้า LINE จริงหรือตอบในเครื่องเฉยๆ
   const handleCheckCommand = async (groupId, text) => {
     return await checkCommand(groupId, text);
+  };
+
+  // กดลิงก์ "เข้าห้องแชทนี้เลย" จากผลค้นหา (ทั้งกดตรงชื่อกลุ่มในบับเบิล และกดหัว popup กระโดดไปข้อความ)
+  // สลับกลุ่ม + สั่งให้ ChatWindow โหลดข้อความรอบๆ ข้อความนั้นแทน "ล่าสุด" แล้ว scroll+ไฮไลต์ให้เอง
+  const handleOpenMessageInChat = (groupId, messageId, highlight) => {
+    setSelectedGroup(groupId);
+    setChatJumpMessageId(messageId);
+    setHighlightKeyword(highlight || null);
+    setJumpMessageId(null);
+    setSearch('');
   };
 
   useEffect(() => {
@@ -403,6 +423,7 @@ export default function App() {
           <DashboardPage
             onSelectGroup={(groupId) => {
               setSelectedGroup(groupId);
+              setChatJumpMessageId(null);
               setShowDashboard(false);
             }}
           />
@@ -418,7 +439,7 @@ export default function App() {
             onSearchChange={setSearch}
             searchResults={searchResults}
             searching={searching}
-            onSelectGroup={(groupId) => { setSelectedGroup(groupId); setSearch(''); }}
+            onSelectGroup={(groupId) => { setSelectedGroup(groupId); setChatJumpMessageId(null); setSearch(''); }}
             onToggleImportant={handleToggleImportant}
             myLineUserId={admin.lineUserId}
             daysBack={daysBack}
@@ -430,6 +451,13 @@ export default function App() {
             onSendDirectMessage={handleSendDirectMessage}
             onAskAssistant={handleAskAssistant}
             onCheckCommand={handleCheckCommand}
+            onJumpToMessage={(groupId, messageId, highlight) => {
+              setJumpMessageId(messageId);
+              setHighlightKeyword(highlight || null);
+            }}
+            onJumpToMessageDirect={handleOpenMessageInChat}
+            scrollToMessageId={chatJumpMessageId}
+            highlightKeyword={highlightKeyword}
           />
         )}
         <Sidebar
@@ -442,6 +470,7 @@ export default function App() {
           onSortChange={setGroupSortBy}
           onSelectGroup={(groupId) => {
             setSelectedGroup(groupId);
+            setChatJumpMessageId(null);
             closeSidebar();
           }}
           onOpenDriveFiles={() => setShowDriveFiles(true)}
@@ -477,6 +506,16 @@ export default function App() {
 
       {showPaymentVerification && (
         <PaymentVerificationPage onClose={() => setShowPaymentVerification(false)} />
+      )}
+
+      {jumpMessageId && (
+        <MessageJumpModal
+          messageId={jumpMessageId}
+          onClose={() => setJumpMessageId(null)}
+          myLineUserId={admin.lineUserId}
+          onOpenInChat={handleOpenMessageInChat}
+          highlightKeyword={highlightKeyword}
+        />
       )}
 
       {/* modal เปลี่ยนรหัสผ่าน — เด้งขึ้นมาก็ต่อเมื่อ showChangePassword เป็น true เท่านั้น */}

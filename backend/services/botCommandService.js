@@ -27,16 +27,40 @@ function matchSummarizeCommand(text, keyword) {
     return { isMatch: true, daysBack: match[1] ? parseInt(match[1], 10) : null };
 }
 
-// ค้นหาไฟล์ตามชื่อ — scopeWhere: object เพิ่มเข้า where เพื่อจำกัดขอบเขต เช่น
+// ตัดพรีวิวข้อความยาวๆ ให้เหลือช่วงที่ "ล้อมรอบคำค้น" แทนที่จะตัดจากต้นข้อความเสมอ (ไม่งั้นถ้าคำค้น
+// อยู่ลึกในข้อความยาวๆ พรีวิวจะไม่โชว์คำค้นเลย)
+function buildPreviewSnippet(text, keyword, maxLen = 150) {
+    const idx = text.toLowerCase().indexOf(keyword.toLowerCase());
+    if (idx === -1) {
+        return text.length > maxLen ? `${text.slice(0, maxLen)}…` : text;
+    }
+    const halfWindow = Math.floor((maxLen - keyword.length) / 2);
+    const start = Math.max(0, idx - halfWindow);
+    const end = Math.min(text.length, idx + keyword.length + halfWindow);
+    let snippet = text.slice(start, end);
+    if (start > 0) snippet = `…${snippet}`;
+    if (end < text.length) snippet = `${snippet}…`;
+    return snippet;
+}
+
+// ครอบคำค้นที่เจอด้วย **...** — frontend (linkifyText ใน ChatWindow.jsx) แปลงเป็น <mark> ไฮไลต์สีให้
+function wrapHighlight(text, keyword) {
+    if (!keyword) return text;
+    return text.replace(new RegExp(escapeRegex(keyword), 'gi'), (match) => `**${match}**`);
+}
+
+// ค้นหาทั้งชื่อไฟล์และเนื้อหาข้อความ — scopeWhere: object เพิ่มเข้า where เพื่อจำกัดขอบเขต เช่น
 // { groupId } = กลุ่มเดียว, { groupId: { [Op.in]: groupIds } } = หลายกลุ่ม,
 // { userId, groupId: null } = DM เดียว, {} = ไม่จำกัด (ค้นหาทั้งระบบ)
 async function buildSearchReply(keyword, scopeWhere = {}, scopeLabel = '') {
     const safeKeyword = keyword.replace(/'/g, "''");
 
     const where = {
-        messageType: 'file',
-        [Op.and]: [literal(`(metadata->>'fileName') ILIKE '%${safeKeyword}%'`)],
         ...scopeWhere,
+        [Op.or]: [
+            { messageType: 'file', [Op.and]: [literal(`(metadata->>'fileName') ILIKE '%${safeKeyword}%'`)] },
+            { messageType: 'text', text: { [Op.iLike]: `%${keyword}%` } },
+        ],
     };
 
     const results = await Message.findAll({
@@ -52,26 +76,46 @@ async function buildSearchReply(keyword, scopeWhere = {}, scopeLabel = '') {
     const scopeSuffix = scopeLabel ? ` (${scopeLabel})` : '';
 
     if (results.length === 0) {
-        return `🔍 ไม่พบไฟล์ที่ชื่อมี "${keyword}"${scopeSuffix}\n\nลองคำค้นอื่นดูครับ`;
+        return `🔍 ไม่พบไฟล์หรือข้อความที่มี "${keyword}"${scopeSuffix}\n\nลองคำค้นอื่นดูครับ`;
     }
 
     let reply = `🔍 ค้นหา: "${keyword}" — พบ ${results.length} รายการ${scopeSuffix}\n\n`;
     results.forEach((msg, i) => {
-        const meta = msg.metadata || {};
-        const fileName = meta.fileName || '(ไม่ทราบชื่อ)';
-        const groupName = msg.group?.groupName || '?';
+        const groupName = msg.group?.groupName || (msg.groupId ? '?' : 'DM');
         const sender = msg.user?.displayName || '?';
         const date = new Date(msg.timestamp).toLocaleDateString('th-TH', {
-            day: 'numeric', month: 'short', year: 'numeric',
+            day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
         });
         const baseUrl = process.env.BASE_URL || 'https://boonyarit.achalee.com';
-        const link = meta.driveFileId
-            ? `https://drive.google.com/file/d/${meta.driveFileId}/view`
-            : meta.gcsPath
-                ? `${baseUrl}/api/media?path=${encodeURIComponent(meta.gcsPath)}`
-                : '(ไม่มีลิงก์)';
+        const roomId = msg.groupId || `private_${msg.userId}`;
 
-        reply += `${i + 1}. ${fileName}\n   📂 ${groupName}  👤 ${sender}\n   📅 ${date}\n   🔗 ${link}\n\n`;
+        // ลิงก์ตรงชื่อกลุ่ม — path "/app-jump-direct" ที่ frontend ดักไว้พาเข้าห้องแชทจริงทันที
+        // (ไม่ผ่าน popup) ต่างจากลิงก์ "🔗" ด้านล่างของผลข้อความที่เปิดดูตัวอย่างใน popup ก่อน
+        // แนบ &highlight= ไปด้วยเสมอ — frontend ใช้ไฮไลต์คำค้นที่ตัวข้อความจริงในห้องแชท (ไม่ใช่แค่
+        // ในพรีวิวของบับเบิลผลค้นหา)
+        const highlightParam = `&highlight=${encodeURIComponent(keyword)}`;
+        const directLink = `${baseUrl}/app-jump-direct?groupId=${encodeURIComponent(roomId)}&messageId=${msg.id}${highlightParam}`;
+        const roomLine = `📂 [${groupName}](${directLink})  👤 ${sender}`;
+
+        if (msg.messageType === 'file') {
+            const meta = msg.metadata || {};
+            const fileName = wrapHighlight(meta.fileName || '(ไม่ทราบชื่อ)', keyword);
+            const fileLink = meta.driveFileId
+                ? `https://drive.google.com/file/d/${meta.driveFileId}/view`
+                : meta.gcsPath
+                    ? `${baseUrl}/api/media?path=${encodeURIComponent(meta.gcsPath)}`
+                    : null;
+            const linkLine = fileLink ? `🔗 [เปิดไฟล์](${fileLink})` : '🔗 (ไม่มีลิงก์)';
+
+            reply += `${i + 1}. 📎 ${fileName}\n   ${roomLine}\n   📅 ${date}\n   ${linkLine}\n\n`;
+        } else {
+            const preview = wrapHighlight(buildPreviewSnippet(msg.text || '', keyword, 150), keyword);
+            // ลิงก์นี้ไม่ได้เปิดหน้าเว็บจริง — frontend ดักจับ path "/app-jump" เอง แล้วเปิด popup
+            // แสดงข้อความนี้ในบริบทห้องเดิม (ดู linkifyText ใน ChatWindow.jsx)
+            const jumpLink = `${baseUrl}/app-jump?groupId=${encodeURIComponent(roomId)}&messageId=${msg.id}${highlightParam}`;
+
+            reply += `${i + 1}. 💬 "${preview}"\n   ${roomLine}\n   📅 ${date}\n   🔗 [ดูตัวอย่างในป็อปอัพ](${jumpLink})\n\n`;
+        }
     });
 
     return reply.trim();

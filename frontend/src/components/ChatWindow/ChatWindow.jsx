@@ -1,22 +1,77 @@
 import { useEffect, useRef, useState } from 'react'
-import { getInitials, getColor } from '../../utils/helpers'
+import { getInitials, getColor, scrollToAndHighlightMessage } from '../../utils/helpers'
 import MessageBubble from '../MessageBubble/MessageBubble'
 import MediaGallery from '../MediaGallery/MediaGallery'
 import { fetchImportantMessages } from '../../api/messages'
 import './ChatWindow.css'
 
-// แปลง URL ในข้อความ (คำตอบจาก AI/คำสั่งค้นหา) ให้เป็นลิงก์คลิกได้จริง
-function linkifyText(text) {
-  const parts = (text || '').split(/(https?:\/\/[^\s<>"'[\]]+)/g)
-  return parts.map((part, i) => {
-    if (!/^https?:\/\//.test(part)) return part
-    const url = part.replace(/[.,;:!?'")\]>]+$/, '')
+// แปลง URL / ลิงก์ markdown [label](url) / **ไฮไลต์** ในข้อความ (คำตอบจาก AI/คำสั่งค้นหา) ให้เป็น
+// ของจริง — ลิงก์ path "/app-jump" หรือ "/app-jump-direct" ไม่ใช่หน้าเว็บจริง แต่ดักไว้เปิด popup
+// กระโดดไปข้อความ หรือเข้าห้องแชทนั้นตรงๆ แทนการเปิดแท็บใหม่ (ต้องมี onJumpToMessage/
+// onJumpToMessageDirect มาจาก props ของ ChatWindow)
+function renderLink(url, label, key, onJumpToMessage, onJumpToMessageDirect) {
+  let parsed
+  try { parsed = new URL(url) } catch { parsed = null }
+
+  if (parsed?.pathname === '/app-jump' && onJumpToMessage) {
+    const groupId = parsed.searchParams.get('groupId')
+    const messageId = parsed.searchParams.get('messageId')
+    const highlight = parsed.searchParams.get('highlight')
     return (
-      <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="ai-msg-link">
-        {part}
+      <a key={key} href={url} className="ai-msg-link"
+        onClick={(e) => { e.preventDefault(); onJumpToMessage(groupId, messageId, highlight) }}>
+        {label}
       </a>
     )
-  })
+  }
+
+  if (parsed?.pathname === '/app-jump-direct' && onJumpToMessageDirect) {
+    const groupId = parsed.searchParams.get('groupId')
+    const messageId = parsed.searchParams.get('messageId')
+    const highlight = parsed.searchParams.get('highlight')
+    return (
+      <a key={key} href={url} className="ai-msg-link"
+        onClick={(e) => { e.preventDefault(); onJumpToMessageDirect(groupId, messageId, highlight) }}>
+        {label}
+      </a>
+    )
+  }
+
+  return (
+    <a key={key} href={url} target="_blank" rel="noopener noreferrer" className="ai-msg-link">
+      {label}
+    </a>
+  )
+}
+
+function linkifyText(text, onJumpToMessage, onJumpToMessageDirect) {
+  const str = text || ''
+  const TOKEN_RE = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*]+)\*\*|(https?:\/\/[^\s<>"'[\]]+)/g
+  const nodes = []
+  let lastIndex = 0
+  let key = 0
+  let m
+
+  while ((m = TOKEN_RE.exec(str)) !== null) {
+    if (m.index > lastIndex) nodes.push(str.slice(lastIndex, m.index))
+
+    if (m[1] !== undefined) {
+      // markdown link [label](url)
+      nodes.push(renderLink(m[2], m[1], key++, onJumpToMessage, onJumpToMessageDirect))
+    } else if (m[3] !== undefined) {
+      // **ไฮไลต์**
+      nodes.push(<mark key={key++} className="search-highlight">{m[3]}</mark>)
+    } else if (m[4] !== undefined) {
+      // URL เปล่าๆ (ไม่ใช่ markdown link) — ตัดวรรคตอนท้ายออกจาก href แต่โชว์ข้อความเดิม
+      const url = m[4].replace(/[.,;:!?'")\]>]+$/, '')
+      nodes.push(renderLink(url, m[4], key++, onJumpToMessage, onJumpToMessageDirect))
+    }
+
+    lastIndex = TOKEN_RE.lastIndex
+  }
+  if (lastIndex < str.length) nodes.push(str.slice(lastIndex))
+
+  return nodes
 }
 
 function relativeTime(dateStr) {
@@ -84,10 +139,15 @@ export default function ChatWindow({
   onSendDirectMessage,
   onAskAssistant,
   onCheckCommand,
+  onJumpToMessage,
+  onJumpToMessageDirect,
+  scrollToMessageId,
+  highlightKeyword,
 }) {
   const messagesEndRef = useRef(null)
   const containerRef = useRef(null)
   const prevScrollHeight = useRef(0)
+  const scrolledToJumpIdRef = useRef(null)
   const [showGallery, setShowGallery] = useState(false)
   const [showImportant, setShowImportant] = useState(false)
   const [importantMessages, setImportantMessages] = useState([])
@@ -324,6 +384,10 @@ export default function ChatWindow({
     // Skip auto-scroll to bottom if we are just loading MORE older messages
     if (prevScrollHeight.current > 0) return
 
+    // ถ้ามาจากลิงก์ผลค้นหา (กด "เข้าห้องแชทนี้เลย") แล้วยังไม่ได้เลื่อนไปหามัน — ข้าม auto-scroll ลงล่างสุด
+    // ไปก่อน ให้ effect แยกด้านล่าง (jump-to-message) จัดการเลื่อน+ไฮไลต์แทน กันเลื่อน 2 ที่ชนกัน
+    if (scrollToMessageId && scrolledToJumpIdRef.current !== scrollToMessageId) return
+
     // ใช้ scrollTop = scrollHeight ตรงๆ เพื่อให้ scroll ถึง bottom เสมอ
     const el = containerRef.current
     el.scrollTop = el.scrollHeight
@@ -338,7 +402,19 @@ export default function ChatWindow({
       clearTimeout(t2)
       clearTimeout(t3)
     }
-  }, [messages, loading, currentGroup?.groupId, search])
+  }, [messages, loading, currentGroup?.groupId, search, scrollToMessageId])
+
+  // ✅ กระโดดไปข้อความ (มาจากลิงก์ผลค้นหา "เข้าห้องแชทนี้เลย") — แยกเป็น effect ของตัวเองต่างหาก
+  // ไม่ผูกกับเงื่อนไข auto-scroll-ลงล่างสุดด้านบน (ซับซ้อนกว่า เสี่ยงโดน guard บล็อกโดยไม่ได้ตั้งใจ)
+  // ใช้ scrollToAndHighlightMessage ที่ลองซ้ำเองถ้ายังไม่เจอ element (กันจังหวะสลับกลุ่ม/โหลดข้อมูลช้า)
+  // ค้าง highlight ไว้เลย ไม่ลบออกอัตโนมัติ
+  useEffect(() => {
+    if (loading || !scrollToMessageId || messages.length === 0) return
+    if (scrolledToJumpIdRef.current === scrollToMessageId) return
+
+    scrolledToJumpIdRef.current = scrollToMessageId
+    scrollToAndHighlightMessage(scrollToMessageId)
+  }, [loading, messages, scrollToMessageId])
 
   // ✅ Maintain scroll position when loading older messages
   useEffect(() => {
@@ -522,7 +598,7 @@ export default function ChatWindow({
               </div>
             )}
             {aiMessages.map((m, i) => (
-              <div key={i} className={`ai-msg ai-msg--${m.role}`}>{linkifyText(m.text)}</div>
+              <div key={i} className={`ai-msg ai-msg--${m.role}`}>{linkifyText(m.text, onJumpToMessage, onJumpToMessageDirect)}</div>
             ))}
             {aiThinking && <div className="ai-msg ai-msg--ai ai-msg--thinking">กำลังคิด...</div>}
           </div>
@@ -677,6 +753,7 @@ export default function ChatWindow({
                   selected={selectedIds.has(msg.id)}
                   onToggleSelect={() => toggleSelectMessage(msg.id)}
                   onContextMenuSelect={(e) => handleContextMenuSelect(msg.id, e)}
+                  highlightKeyword={msg.id === scrollToMessageId ? highlightKeyword : undefined}
                 />
               </div>
             )
@@ -685,7 +762,7 @@ export default function ChatWindow({
           {localBubbles.length > 0 && (
             <div className="local-bubbles">
               {localBubbles.map((m, i) => (
-                <div key={i} className={`ai-msg ai-msg--${m.role} ai-msg--local`}>{linkifyText(m.text)}</div>
+                <div key={i} className={`ai-msg ai-msg--${m.role} ai-msg--local`}>{linkifyText(m.text, onJumpToMessage, onJumpToMessageDirect)}</div>
               ))}
             </div>
           )}

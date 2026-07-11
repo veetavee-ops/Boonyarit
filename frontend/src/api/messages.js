@@ -81,6 +81,19 @@ export async function fetchMessages({ groupId, limit, before, sinceDays } = {}) 
 }
 
 /**
+ * โหลดข้อความก่อนหน้า+หลังจาก (จำนวน limit ต่อฝั่ง) ของ messageId นี้ในห้องที่มันอยู่ — ใช้เปิด popup
+ * "กระโดดไปข้อความ" จากลิงก์ผลค้นหา ไม่ต้องรู้ groupId ล่วงหน้า
+ */
+export async function fetchMessageContext(messageId, limit = 25) {
+  try {
+    const res = await axiosInstance.get(`/api/messages/context/${messageId}`, { params: { limit } })
+    return res.data // { groupId, messages, hasMoreBefore }
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'โหลดข้อความไม่สำเร็จ')
+  }
+}
+
+/**
  * ลบข้อความถาวร — ส่งได้ทั้งอันเดียว (array 1 ตัว) หรือหลายอันพร้อมกัน
  */
 export async function deleteMessages(messageIds) {

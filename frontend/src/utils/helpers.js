@@ -44,3 +44,19 @@ export const formatFileSize = (bytes) => {
   if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB'
   return (bytes / 1048576).toFixed(1) + ' MB'
 }
+
+// เลื่อนไปหา element ที่มี data-id ตรงกับ id แล้วไฮไลต์ค้างไว้ — ลองซ้ำด้วย setTimeout จนกว่าจะเจอ
+// (กันกรณี element ยังไม่ถูก mount ตอน effect รันครั้งแรก เช่น ระหว่างสลับกลุ่ม/โหลดข้อความ)
+// คืนค่า true ถ้าเจอและทำสำเร็จ, false ถ้าลองครบจำนวนแล้วยังไม่เจอ (element อาจไม่มีอยู่จริง)
+export function scrollToAndHighlightMessage(id, attempt = 0) {
+  const el = document.querySelector(`[data-id="${id}"]`)
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    el.classList.add('highlight-search-target')
+    return true
+  }
+  if (attempt < 40) {
+    setTimeout(() => scrollToAndHighlightMessage(id, attempt + 1), 50)
+  }
+  return false
+}

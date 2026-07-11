@@ -178,8 +178,20 @@ function VideoThumb({ url, duration, onClick }) {
   );
 }
 
+// ครอบทุกจุดที่เจอ keyword ในข้อความด้วย <mark> — ใช้ตอนเปิดข้อความจากลิงก์ผลค้นหา (กระโดดไปข้อความ)
+// ให้เห็นชัดว่าคำที่ค้นอยู่ตรงไหนในข้อความจริง ไม่ใช่แค่ในพรีวิวของบับเบิลผลค้นหา
+function highlightKeywordInText(text, keyword, keyPrefix) {
+  const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const chunks = text.split(new RegExp(`(${escaped})`, "gi"));
+  return chunks.map((chunk, i) =>
+    chunk.toLowerCase() === keyword.toLowerCase()
+      ? <mark key={`${keyPrefix}-${i}`} className="search-highlight">{chunk}</mark>
+      : chunk
+  );
+}
+
 // ─── Parse text and linkify URLs ──────────────────────────────────────────────
-function parseTextWithLinks(text, onLinkClick) {
+function parseTextWithLinks(text, onLinkClick, highlightKeyword) {
   const parts = text.split(/(https?:\/\/[^\s<>"'[\]]+)/g);
   return parts.map((part, i) => {
     if (/^https?:\/\//.test(part)) {
@@ -200,7 +212,11 @@ function parseTextWithLinks(text, onLinkClick) {
         </span>
       );
     }
-    return part;
+    return highlightKeyword ? (
+      <span key={i}>{highlightKeywordInText(part, highlightKeyword, i)}</span>
+    ) : (
+      part
+    );
   });
 }
 
@@ -468,7 +484,7 @@ function MediaModal({ media, onClose }) {
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImportant, myLineUserId, selectMode, selected, onToggleSelect, onContextMenuSelect }) {
+export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImportant, myLineUserId, selectMode, selected, onToggleSelect, onContextMenuSelect, highlightKeyword }) {
   const [lightboxImg, setLightboxImg] = useState(null);
   const [mediaModal, setMediaModal] = useState(null);
   const [linkUrl, setLinkUrl] = useState(null);
@@ -682,7 +698,7 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
                         {msg.messageType === "text" && (
                           <div className="msg-reply-text">
                             {msg.text
-                              ? parseTextWithLinks(msg.text, openLink)
+                              ? parseTextWithLinks(msg.text, openLink, highlightKeyword)
                               : "(ไม่มีข้อความ)"}
                           </div>
                         )}
@@ -694,7 +710,7 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
               {msg.messageType === "text" && !quotedMessage && (
                 <div className="msg-text">
                   {msg.text
-                    ? parseTextWithLinks(msg.text, openLink)
+                    ? parseTextWithLinks(msg.text, openLink, highlightKeyword)
                     : "(ไม่มีข้อความ)"}
                 </div>
               )}

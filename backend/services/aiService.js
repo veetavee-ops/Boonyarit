@@ -442,20 +442,31 @@ function matchPaymentItems(reportItems, bankItems) {
 // ไปใช้ llama-3.3-70b-versatile ของ Groq เอง (เจ้าเดียวกัน เชื่อถือได้กว่า) แทนที่จะสลับไป Gemini
 // ซึ่งโปรเจกต์นี้โควต้า = 0 อยู่แล้ว (ไม่เคยผูก billing) จะพังซ้ำแน่ๆ
 async function askQuestion(question) {
-  const prompt = `คุณเป็นผู้ช่วย AI ของทีมงานในระบบแชท LINE OA ตอบคำถามเป็นภาษาไทย กระชับ ชัดเจน
+  const searchPrompt = `คุณเป็นผู้ช่วย AI ของทีมงานในระบบแชท LINE OA ตอบคำถามเป็นภาษาไทย กระชับ ชัดเจน
 ถ้าคำถามต้องการข้อมูลล่าสุด/เรียลไทม์ (เช่น ราคาหุ้น อัตราแลกเปลี่ยน ข่าว สภาพอากาศ) ให้ค้นเว็บจริง
 แล้วตอบเป็นตัวเลข/ข้อมูลจริงที่ค้นเจอเท่านั้น ห้ามใส่ placeholder หรือสัญลักษณ์แทนตัวเลข (เช่น XXXX.XX)
 เด็ดขาด ถ้าค้นแล้วหาคำตอบที่แน่ชัดไม่ได้จริงๆ ให้บอกตรงๆ ว่าหาไม่เจอ แทนที่จะเดาหรือใส่ค่าตัวอย่าง
 
 คำถาม: ${question}`;
 
+  // prompt แยกสำหรับตอน fallback — โมเดลนี้ไม่มี web search จริงๆ การสั่ง "ค้นเว็บ" แบบ searchPrompt
+  // กับโมเดลนี้ทำให้มันเข้าใจผิดว่าตัวเองค้นได้ แล้วมั่วตัวเลข+อ้างแหล่งข้อมูลปลอม (พบตอนทดสอบจริง)
+  // ต้องบอกตรงๆ ว่าไม่มีเน็ต ห้ามเดา ให้ปฏิเสธคำถามที่ต้องการข้อมูลเรียลไทม์ไปเลย
+  const noSearchPrompt = `คุณเป็นผู้ช่วย AI ของทีมงานในระบบแชท LINE OA ตอบคำถามเป็นภาษาไทย กระชับ ชัดเจน
+คุณไม่มีการเชื่อมต่ออินเทอร์เน็ตและไม่สามารถค้นข้อมูลใดๆ ได้เลยในตอนนี้ ถ้าคำถามต้องการข้อมูลล่าสุด/
+เรียลไทม์ (เช่น ราคาหุ้น อัตราแลกเปลี่ยน ข่าว สภาพอากาศ หรือเหตุการณ์ปัจจุบัน) ให้ตอบตรงๆ ว่า "ตอนนี้ระบบ
+ค้นข้อมูลเรียลไทม์ขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง" ห้ามเดาตัวเลขหรืออ้างอิงแหล่งข้อมูลที่ไม่ได้ค้น
+จริงเด็ดขาด ส่วนคำถามทั่วไปที่ไม่ต้องการข้อมูลเรียลไทม์ ตอบได้ตามปกติ
+
+คำถาม: ${question}`;
+
   try {
     let result;
     try {
-      result = await callGroq(prompt, 'groq/compound-mini');
+      result = await callGroq(searchPrompt, 'groq/compound-mini');
     } catch (primaryError) {
       console.warn(`⚠️ compound-mini failed: ${primaryError.message} — falling back to llama-3.3-70b-versatile (ไม่มี web search)`);
-      result = await callGroq(prompt);
+      result = await callGroq(noSearchPrompt);
       result.modelLabel += ' (fallback, ไม่มี web search)';
     }
     return { text: result.text, model: result.modelLabel };

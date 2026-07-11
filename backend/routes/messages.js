@@ -18,6 +18,26 @@ async function getAllowedGroupIds(adminId) {
   return rows.map((r) => r.groupId);
 }
 
+// คำสั่ง "ค้นหาDB xxxx" — ค้นข้ามห้อง/กลุ่มทั้งหมด (ต่างจาก "ค้นหา" ที่ scope แค่ห้องเดียว)
+// superuser/admin เห็นทั้งระบบ, role user เห็นเฉพาะกลุ่มที่ตัวเองมีสิทธิ์ (กัน role user ข้ามไปเห็น
+// ไฟล์ของกลุ่มที่ตัวเองไม่มีสิทธิ์เข้าถึง)
+const SEARCH_DB_KEYWORD = 'ค้นหาDB';
+const searchDbPattern = new RegExp(`^${escapeRegex(SEARCH_DB_KEYWORD)}\\s+(.+)`, 'u');
+
+async function getSearchDbScope(admin) {
+  if (admin.role === 'user') {
+    const allowed = await getAllowedGroupIds(admin.id);
+    return {
+      scopeWhere: { groupId: { [Op.in]: allowed } },
+      scopeLabel: 'ขอบเขต: เฉพาะกลุ่มที่คุณเป็นสมาชิก (ค้นหาทั้งหมด ไม่จำกัดช่วงเวลา)',
+    };
+  }
+  return {
+    scopeWhere: {},
+    scopeLabel: 'ขอบเขต: ทั้งระบบ ทุกกลุ่ม/DM (ค้นหาทั้งหมด ไม่จำกัดช่วงเวลา)',
+  };
+}
+
 // GET /api/messages?groupId=...
 // Returns ALL messages for the selected group/private chat (no date filter)
 router.get('/', async (req, res) => {
@@ -81,6 +101,66 @@ router.get('/', async (req, res) => {
     res.json(messages);
   } catch (error) {
     console.error('[ERROR] GET /api/messages:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET /api/messages/context/:messageId — โหลดข้อความก่อนหน้า+หลังจากของข้อความนี้ (รวมตัวเอง) ในห้อง
+// ที่มันสังกัดอยู่ — ใช้เปิด popup "กระโดดไปข้อความ" จากลิงก์ผลค้นหา (ดู /app-jump ฝั่ง frontend)
+// ไม่ต้องรู้ groupId ล่วงหน้า เพราะหาเองจาก messageId แล้วเช็คสิทธิ์จากห้องจริงที่ข้อความนั้นสังกัดอยู่
+// limit = จำนวนข้อความต่อฝั่ง (ก่อน/หลัง) ค่า default 25
+router.get('/context/:messageId', async (req, res) => {
+  try {
+    const { messageId } = req.params;
+    const limit = parseInt(req.query.limit, 10) || 25;
+
+    const target = await Message.findByPk(messageId);
+    if (!target) {
+      return res.status(404).json({ error: 'ไม่พบข้อความนี้ (อาจถูกลบไปแล้ว)' });
+    }
+
+    const roomGroupId = target.groupId || `private_${target.userId}`;
+
+    if (req.admin.role === 'user') {
+      const allowed = await getAllowedGroupIds(req.admin.id);
+      if (!allowed.includes(roomGroupId)) {
+        return res.status(403).json({ error: 'ไม่มีสิทธิ์เข้าถึงห้องนี้' });
+      }
+    }
+
+    const roomWhere = target.groupId
+      ? { groupId: target.groupId }
+      : { userId: target.userId, groupId: null };
+
+    const includeOpts = [
+      { model: User, as: 'user', attributes: ['displayName', 'pictureUrl'] },
+      { model: Group, as: 'group', attributes: ['groupName', 'pictureUrl'] },
+    ];
+
+    // ก่อนหน้า (รวมตัวเอง) — เรียง DESC มาก่อนแล้วค่อย reverse ให้เป็นเก่า→ใหม่
+    const beforeAndSelf = await Message.findAll({
+      where: { ...roomWhere, timestamp: { [Op.lte]: target.timestamp } },
+      include: includeOpts,
+      order: [['timestamp', 'DESC']],
+      limit: limit + 1,
+    });
+    beforeAndSelf.reverse();
+
+    // หลังจากนั้น — เรียง ASC ตามธรรมชาติอยู่แล้ว
+    const after = await Message.findAll({
+      where: { ...roomWhere, timestamp: { [Op.gt]: target.timestamp } },
+      include: includeOpts,
+      order: [['timestamp', 'ASC']],
+      limit,
+    });
+
+    res.json({
+      groupId: roomGroupId,
+      messages: [...beforeAndSelf, ...after],
+      hasMoreBefore: beforeAndSelf.length === limit + 1,
+    });
+  } catch (error) {
+    console.error('[ERROR] GET /api/messages/context/:messageId:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -262,7 +342,17 @@ router.post('/ask', async (req, res) => {
       return res.status(400).json({ error: 'text required' });
     }
 
-    const result = await askQuestion(text.trim());
+    const trimmedText = text.trim();
+
+    // "ค้นหาDB xxxx" ดักก่อนส่งเข้า LLM แบบ free-form — ค้นข้อมูลในระบบจริง ไม่ใช่ถาม AI
+    const searchDbMatch = trimmedText.match(searchDbPattern);
+    if (searchDbMatch) {
+      const { scopeWhere, scopeLabel } = await getSearchDbScope(req.admin);
+      const reply = await buildSearchReply(searchDbMatch[1].trim(), scopeWhere, scopeLabel);
+      return res.json({ reply });
+    }
+
+    const result = await askQuestion(trimmedText);
     res.json({ reply: result.text });
   } catch (error) {
     console.error('[ERROR] POST /api/messages/ask:', error);
@@ -286,6 +376,14 @@ router.post('/command', async (req, res) => {
       if (!allowed.includes(groupId)) {
         return res.status(403).json({ error: 'ไม่มีสิทธิ์เข้าถึงกลุ่มนี้' });
       }
+    }
+
+    // "ค้นหาDB xxxx" ค้นข้ามห้อง/กลุ่มทั้งหมด — เช็คก่อนคำสั่ง "ค้นหา" ปกติ (scope ต่างกัน)
+    const searchDbMatch = text.trim().match(searchDbPattern);
+    if (searchDbMatch) {
+      const { scopeWhere, scopeLabel } = await getSearchDbScope(req.admin);
+      const reply = await buildSearchReply(searchDbMatch[1].trim(), scopeWhere, scopeLabel);
+      return res.json({ isCommand: true, reply });
     }
 
     const searchKeyword = await getSearchKeyword();
