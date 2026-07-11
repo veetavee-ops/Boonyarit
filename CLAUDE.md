@@ -473,8 +473,8 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
 3. **จับตา rate limit ของ `groq/compound-mini`** — ต่ำกว่าโมเดลปกติเยอะ (ต้องค้นเว็บจริงทุกครั้ง) ถ้าใช้
    งานจริงบ่อยอาจโดน 429/413 ถี่ — ยังไม่ได้เช็ค tier/quota จริงใน Groq Console
 4. **ทดสอบฟีเจอร์ตรวจสอบการโอนเงินกับรูปจริงผ่าน LINE** — เปิดธง `isPaymentVerifyGroup` ให้กลุ่มทดสอบก่อน แล้วลองส่ง 2 รูปจริง (ยังทดสอบแค่ logic/DB/API ผ่าน HTTP เท่านั้น ยังไม่เคยทดสอบผ่าน LINE จริง)
-5. **แก้ Gemini API billing** — เข้า https://aistudio.google.com/apikey เช็ค project ที่สร้าง key แล้วผูก billing account ให้ปลดล็อก free tier (ตอนนี้ `askQuestion` เลิกพึ่ง Gemini ไปแล้ว แต่ฟีเจอร์อื่น เช่น อ่านสลิป ยังใช้ Gemini เป็นหลักอยู่)
-6. **SMTP สำหรับฟีเจอร์ลืมรหัสผ่าน** — ยังไม่ได้ตั้งค่า รอ Gmail + App Password จากคุณ
+5. **แก้ Gemini API billing** — เข้า https://aistudio.google.com/apikey เช็ค project ที่สร้าง key แล้วผูก billing account ให้ปลดล็อก free tier (`askQuestion` เลิกพึ่ง Gemini ไปแล้ว แต่ฟีเจอร์อื่น เช่น อ่านสลิป/บิล ยังใช้ Gemini เป็นหลักอยู่)
+6. **SMTP สำหรับฟีเจอร์ลืมรหัสผ่าน** — ยังไม่ได้ตั้งค่า รอ Gmail + App Password จากคุณ (พักไว้หลายรอบแล้ว)
 7. **tax-ocr Drive cleanup** — ลบ CLAUDE.md 4 อัน (keep `1BUdruo8dnxxXibPUNCegEoJiraxujWAo`) + ลบ .env 2 อัน (keep `1e2288av9H0RRX2yjgMyhxXCIIfAWGDha`) รอ user confirm
 8. **root misplaced files** — `gdrive.md` + `start.md` ในรากของ Drive ควรย้ายเข้า `_claude-skills` หรือปล่อยไว้ รอ user confirm
 9. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`

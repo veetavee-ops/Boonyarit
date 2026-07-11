@@ -478,9 +478,54 @@ async function askQuestion(question) {
   }
 }
 
+// ── Vision: อ่านรูปใบเสร็จ/บิลซื้อของ (1-10 รูป ของใบเดียวกัน) แล้วแกะเป็น JSON ──
+// รูปหลายใบถือเป็นบิลเดียวกันเสมอ (เช่นถ่ายแยกเพราะบิลยาว) — รวมรายการจากทุกรูปเป็นก้อนเดียว
+async function extractReceiptSummary(imageBuffers) {
+  const prompt = `คุณเป็นผู้ช่วยอ่านใบเสร็จ/บิลซื้อของ จะได้รับรูป ${imageBuffers.length} รูป ซึ่งเป็นใบเสร็จใบเดียวกัน (อาจถ่ายหลายรูปเพราะบิลยาวหรือมีหลายหน้า) ให้รวมข้อมูลจากทุกรูปเป็นรายการเดียว แล้วแกะข้อมูลออกมาเป็น JSON ตาม schema นี้เป๊ะๆ (ห้ามมีข้อความอื่นนอกจาก JSON, ห้ามใส่ markdown code fence):
+
+{
+  "storeName": "ชื่อร้านค้า/ผู้ขายตามที่ปรากฏในบิล",
+  "purchaseDate": "วันที่ซื้อ รูปแบบ D/M/YY แบบ พ.ศ. เช่น 8/7/69",
+  "items": ["ชื่อสินค้ารายการที่ 1", "ชื่อสินค้ารายการที่ 2"],
+  "totalAmount": 1305.00
+}
+
+กติกา:
+- "items" ต้องมีครบทุกรายการสินค้าที่อยู่ในบิล ห้ามตัดทอนหรือสรุปรวมรายการเข้าด้วยกัน
+- "totalAmount" คือยอดรวมสุทธิที่ต้องจ่ายจริง (grand total / ยอดชำระ) ไม่ใช่ยอดก่อนหักส่วนลดหรือก่อนภาษี
+- ถ้ารูปที่ส่งมาไม่ใช่ใบเสร็จ/บิลซื้อของเลย ให้ storeName เป็น null และ items เป็น []`;
+
+  let result;
+  try {
+    result = await callGeminiVision(prompt, imageBuffers);
+  } catch (primaryError) {
+    console.warn(`⚠️ Gemini vision failed: ${primaryError.message} — ลองใช้ Groq vision แทน`);
+    result = await callGroqVision(prompt, imageBuffers);
+    result.modelLabel += ' (fallback)';
+  }
+
+  console.log(`✅ Receipt summary extracted by ${result.modelLabel}`);
+
+  let parsed;
+  try {
+    parsed = parseJsonFromModel(result.text);
+  } catch (e) {
+    throw new Error(`อ่าน JSON จากผลลัพธ์ AI ไม่สำเร็จ: ${e.message}\n--- raw ---\n${result.text.slice(0, 500)}`);
+  }
+
+  return {
+    storeName: parsed.storeName || null,
+    purchaseDate: parsed.purchaseDate || null,
+    items: Array.isArray(parsed.items) ? parsed.items : [],
+    totalAmount: Number(parsed.totalAmount) || 0,
+    model: result.modelLabel,
+  };
+}
+
 module.exports = {
   summarizeAllChatsForDate,
   extractPaymentDocuments,
   matchPaymentItems,
   askQuestion,
+  extractReceiptSummary,
 };

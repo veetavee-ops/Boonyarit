@@ -28,8 +28,8 @@ router.get('/', async (req, res) => {
           'groupId',
           [sequelize.fn('MAX', sequelize.col('timestamp')), 'lastMessageTime'],
         ],
-        include: [{ model: Group, as: 'group', attributes: ['groupName', 'pictureUrl', 'isPaymentVerifyGroup'] }],
-        group: ['Message.groupId', 'group.groupId', 'group.isPaymentVerifyGroup'],
+        include: [{ model: Group, as: 'group', attributes: ['groupName', 'pictureUrl', 'isPaymentVerifyGroup', 'isReceiptSummaryGroup'] }],
+        group: ['Message.groupId', 'group.groupId', 'group.isPaymentVerifyGroup', 'group.isReceiptSummaryGroup'],
         order: [[sequelize.fn('MAX', sequelize.col('timestamp')), 'DESC']],
       });
 
@@ -40,6 +40,7 @@ router.get('/', async (req, res) => {
         isPrivate: false,
         lastMessageTime: m.dataValues.lastMessageTime,
         isPaymentVerifyGroup: m.group?.isPaymentVerifyGroup || false,
+        isReceiptSummaryGroup: m.group?.isReceiptSummaryGroup || false,
       }));
     } catch (error) {
       console.error('[ERROR] Fetching group chats:', error.message);
@@ -216,6 +217,22 @@ router.patch('/:groupId/payment-verify', requireAdmin, async (req, res) => {
     res.json({ groupId: group.groupId, isPaymentVerifyGroup: group.isPaymentVerifyGroup });
   } catch (error) {
     console.error('[ERROR] PATCH /api/groups/:groupId/payment-verify:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// PATCH /api/groups/:groupId/receipt-summary — เปิด/ปิดฟีเจอร์สรุปบิลซื้อของ OCR สำหรับกลุ่มนี้
+// เฉพาะ role admin เท่านั้น (เหมือน payment-verify)
+router.patch('/:groupId/receipt-summary', requireAdmin, async (req, res) => {
+  try {
+    const { isReceiptSummaryGroup } = req.body;
+    const group = await Group.findByPk(req.params.groupId);
+    if (!group) return res.status(404).json({ error: 'ไม่พบกลุ่ม' });
+
+    await group.update({ isReceiptSummaryGroup: !!isReceiptSummaryGroup });
+    res.json({ groupId: group.groupId, isReceiptSummaryGroup: group.isReceiptSummaryGroup });
+  } catch (error) {
+    console.error('[ERROR] PATCH /api/groups/:groupId/receipt-summary:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
