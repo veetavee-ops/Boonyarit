@@ -101,8 +101,10 @@ router.get('/active', async (req, res) => {
     let whereClause = { groupId: { [Op.ne]: null, [Op.ne]: '' } };
 
     if (date && date !== 'all') {
-      const start = new Date(date + 'T00:00:00.000Z');
-      const end = new Date(date + 'T23:59:59.999Z');
+      // +07:00 ไม่ใช่ Z — date เป็นวันที่ปฏิทินแบบไทย (Asia/Bangkok) ถ้าตีเป็น UTC midnight ตรงๆ
+      // ขอบเขตจะเลื่อนไป 7 ชม. (พลาดข้อความ 00:00-06:59 ของวันนั้นตามเวลาไทย)
+      const start = new Date(date + 'T00:00:00.000+07:00');
+      const end = new Date(date + 'T23:59:59.999+07:00');
       whereClause.timestamp = { [Op.between]: [start, end] };
     } else if (rangeValue && rangeUnit) {
       const cutoff = new Date();

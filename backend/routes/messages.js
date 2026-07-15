@@ -444,8 +444,10 @@ router.post('/summarize-day', async (req, res) => {
       }
       // else: no date restriction → all messages ever
     } else {
-      const start = new Date(date + 'T00:00:00.000Z');
-      const end = new Date(date + 'T23:59:59.999Z');
+      // +07:00 ไม่ใช่ Z — date เป็นวันที่ปฏิทินไทย (Asia/Bangkok) ถ้าตีเป็น UTC midnight ตรงๆ
+      // ขอบเขตจะเลื่อนไป 7 ชม. (พลาดข้อความ 00:00-06:59 ของวันนั้นตามเวลาไทย)
+      const start = new Date(date + 'T00:00:00.000+07:00');
+      const end = new Date(date + 'T23:59:59.999+07:00');
       whereClause = { timestamp: { [Op.between]: [start, end] } };
     }
 

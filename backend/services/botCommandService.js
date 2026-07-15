@@ -133,8 +133,10 @@ async function buildSummarizeReply(daysBack, scopeWhere = {}, scopeLabel = '') {
         const cutoff = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
         where = { timestamp: { [Op.gte]: cutoff } };
     } else {
-        const start = new Date(todayStr + 'T00:00:00.000Z');
-        const end = new Date(todayStr + 'T23:59:59.999Z');
+        // +07:00 ไม่ใช่ Z — todayStr เป็นวันที่ปฏิทินไทย (Asia/Bangkok) ถ้าตีเป็น UTC midnight ตรงๆ
+        // ขอบเขตจะเลื่อนไป 7 ชม. (พลาดข้อความ 00:00-06:59 ของวันนี้ตามเวลาไทย)
+        const start = new Date(todayStr + 'T00:00:00.000+07:00');
+        const end = new Date(todayStr + 'T23:59:59.999+07:00');
         where = { timestamp: { [Op.between]: [start, end] } };
     }
     where = { ...where, ...scopeWhere };
