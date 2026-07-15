@@ -44,9 +44,14 @@ function buildPreviewSnippet(text, keyword, maxLen = 150) {
 }
 
 // ครอบคำค้นที่เจอด้วย **...** — frontend (linkifyText ใน ChatWindow.jsx) แปลงเป็น <mark> ไฮไลต์สีให้
+// ต้องเปลี่ยน "*" ที่อาจมีอยู่แล้วจริงในข้อความของ user เป็นตัวเต็มความกว้าง (fullwidth ＊) ก่อนเสมอ
+// ไม่งั้นชนกับ delimiter ของเราเอง — เจอเคสจริง: user พิมพ์ "***..." ปนมาในข้อความ พอเราครอบ ** ทับ
+// keyword ที่อยู่ใกล้กัน ทำให้จำนวน "**" ไม่ครบคู่ การจับคู่ฝั่ง frontend เพี้ยนกลืนข้อความ/ลิงก์ที่ตาม
+// มาทั้งหมดเข้าไปเป็นไฮไลต์เดียว (ลิงก์กดไม่ได้ + ไฮไลต์เลอะทั้งข้อความ)
 function wrapHighlight(text, keyword) {
-    if (!keyword) return text;
-    return text.replace(new RegExp(escapeRegex(keyword), 'gi'), (match) => `**${match}**`);
+    const safe = text.replace(/\*/g, '＊');
+    if (!keyword) return safe;
+    return safe.replace(new RegExp(escapeRegex(keyword), 'gi'), (match) => `**${match}**`);
 }
 
 // ค้นหาทั้งชื่อไฟล์และเนื้อหาข้อความ — scopeWhere: object เพิ่มเข้า where เพื่อจำกัดขอบเขต เช่น
