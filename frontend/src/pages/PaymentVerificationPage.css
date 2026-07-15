@@ -76,3 +76,63 @@
   font-size: 0.85rem;
   resize: vertical;
 }
+
+/* ── บัญชี & เงินคงเหลือ ────────────────────────────────── */
+.pv-account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.pv-account-card {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+  cursor: pointer;
+  transition: box-shadow 0.15s, border-color 0.15s;
+}
+.pv-account-card:hover {
+  border-color: var(--primary-color);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.pv-account-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: #111;
+  margin-bottom: 6px;
+}
+
+.pv-account-balance {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #0f766e;
+  margin-bottom: 10px;
+}
+
+.pv-account-meta {
+  display: flex;
+  gap: 12px;
+  font-size: 0.82rem;
+  margin-bottom: 8px;
+}
+
+.pv-account-updated {
+  font-size: 0.78rem;
+}
+
+.pv-amount {
+  font-weight: 600;
+}
+.pv-amount--in {
+  color: #15803d;
+}
+.pv-amount--out {
+  color: #b45309;
+}
+
+.pv-load-more {
+  align-self: center;
+  margin: 12px auto 0;
+}

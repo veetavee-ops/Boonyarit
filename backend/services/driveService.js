@@ -73,4 +73,12 @@ async function deleteFileFromDrive(fileId) {
     console.log(`🗑️ ลบไฟล์ออกจาก Drive: ${fileId}`);
 }
 
-module.exports = { ensureGroupFolder, uploadFileToDrive, deleteFileFromDrive };
+// เรียก Drive API ตรงๆ แบบเบาที่สุดเพื่อยืนยันว่า token ยังใช้ได้จริง — ใช้สำหรับ health check เท่านั้น
+// ห้ามใช้ ensureGroupFolder() แทน เพราะมัน cache folder ID ไว้ใน RAM (ดู folderCache ด้านบน) พอ cache
+// ไว้แล้วจะไม่เรียก Drive API ซ้ำอีกเลย ทำให้ตรวจไม่เจอ token ที่หมดอายุทีหลัง (เคยเป็นสาเหตุที่ token
+// หมดอายุแบบไม่มีใครรู้จนมีคนมาแจ้งมาแล้วหลายรอบ — ดู session 2-4 ใน CLAUDE.md)
+async function checkDriveAuth() {
+    await drive.about.get({ fields: 'user' });
+}
+
+module.exports = { ensureGroupFolder, uploadFileToDrive, deleteFileFromDrive, checkDriveAuth };

@@ -7,6 +7,7 @@ const Label = require('./Label');
 const GroupLabel = require('./GroupLabel');
 const Setting = require('./Setting');
 const PaymentVerification = require('./PaymentVerification');
+const AccountLedgerEntry = require('./AccountLedgerEntry');
 
 // ความสัมพันธ์ระหว่าง Message, User, Group
 Message.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -32,6 +33,12 @@ Label.belongsTo(Admin, { foreignKey: 'adminId' });
 // ยัง join ตอน query ได้ปกติ แค่ไม่มี FK constraint ระดับ DB เท่านั้น
 PaymentVerification.belongsTo(Group, { foreignKey: 'groupId', targetKey: 'groupId', as: 'group', constraints: false });
 
+// AccountLedgerEntry ผูกกับ Group (คนละ schema เหมือน PaymentVerification ด้านบน — ต้อง constraints: false)
+// และผูกกับ PaymentVerification (schema เดียวกัน — ใช้ FK ปกติได้)
+AccountLedgerEntry.belongsTo(Group, { foreignKey: 'groupId', targetKey: 'groupId', as: 'group', constraints: false });
+AccountLedgerEntry.belongsTo(PaymentVerification, { foreignKey: 'paymentVerificationId', as: 'verification' });
+PaymentVerification.hasMany(AccountLedgerEntry, { foreignKey: 'paymentVerificationId', as: 'ledgerEntries' });
+
 module.exports = {
   User,
   Group,
@@ -42,4 +49,5 @@ module.exports = {
   GroupLabel,
   Setting,
   PaymentVerification,
+  AccountLedgerEntry,
 };

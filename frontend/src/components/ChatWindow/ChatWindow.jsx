@@ -225,11 +225,11 @@ export default function ChatWindow({
   const [aiMessages, setAiMessages] = useState([])
   const [aiThinking, setAiThinking] = useState(false)
 
-  const handleAskSubmit = async () => {
-    const question = composeText.trim()
+  // ส่งคำถาม/คำสั่งไปให้ onAskAssistant แล้วต่อ bubble ใน DM — ใช้ร่วมกันทั้งคุยแบบ free-form
+  // และปุ่ม "ค้นหาDB" (displayText แยกจาก question จริงที่ส่งไป backend เผื่ออยากโชว์ต่างกัน)
+  const askAndAppend = async (question, displayText) => {
     if (!question || aiThinking) return
-    setComposeText('')
-    setAiMessages((prev) => [...prev, { role: 'user', text: question }])
+    setAiMessages((prev) => [...prev, { role: 'user', text: displayText ?? question }])
     setAiThinking(true)
     try {
       const result = await onAskAssistant?.(question)
@@ -238,6 +238,49 @@ export default function ChatWindow({
       setAiMessages((prev) => [...prev, { role: 'ai', text: '❌ ' + e.message }])
     } finally {
       setAiThinking(false)
+    }
+  }
+
+  const handleAskSubmit = () => {
+    const question = composeText.trim()
+    if (!question || aiThinking) return
+    setComposeText('')
+    askAndAppend(question)
+  }
+
+  // ── ปุ่ม "ค้นหาDB" — ค้นทั้งฐานข้อมูล (ต่างจากคุยกับ AI แบบ free-form) ──
+  const [dbSearchOpen, setDbSearchOpen] = useState(false)
+  const [dbSearchText, setDbSearchText] = useState('')
+  const dbSearchInputRef = useRef(null)
+
+  const handleDbSearchToggle = () => {
+    setDbSearchOpen((v) => {
+      const next = !v
+      if (next) setTimeout(() => dbSearchInputRef.current?.focus(), 0)
+      else setDbSearchText('')
+      return next
+    })
+  }
+
+  const handleDbSearchSubmit = () => {
+    const keyword = dbSearchText.trim()
+    if (!keyword || aiThinking) return
+    setDbSearchText('')
+    setDbSearchOpen(false)
+    askAndAppend(`ค้นหาDB ${keyword}`, `🔍 ค้นหาDB: ${keyword}`)
+  }
+
+  const handleDbSearchKeyDown = (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      handleDbSearchSubmit()
+      return
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      setDbSearchOpen(false)
+      setDbSearchText('')
     }
   }
 
@@ -317,13 +360,14 @@ export default function ChatWindow({
       if (confirmDeleteOpen) { if (!deleting) setConfirmDeleteOpen(false); return }
       if (forwardOpen) { if (!forwarding) closeForwardPicker(); return }
       if (sendConfirmOpen) { if (!sending) closeSendConfirm(); return }
+      if (dbSearchOpen) { setDbSearchOpen(false); setDbSearchText(''); return }
       if (showGallery) { setShowGallery(false); return }
       if (showImportant) { setShowImportant(false); return }
       if (selectMode) { setSelectMode(false); setSelectedIds(new Set()); return }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [confirmDeleteOpen, deleting, forwardOpen, forwarding, sendConfirmOpen, sending, showGallery, showImportant, selectMode])
+  }, [confirmDeleteOpen, deleting, forwardOpen, forwarding, sendConfirmOpen, sending, dbSearchOpen, showGallery, showImportant, selectMode])
 
   const toggleSelectMode = () => {
     setSelectMode((v) => !v)
@@ -594,7 +638,8 @@ export default function ChatWindow({
           <div className="messages ai-assistant-messages">
             {aiMessages.length === 0 && (
               <div className="empty">
-                <p>ถามอะไรก็ได้ เช่น "ค้นหา สัญญา" หรือ "สรุปเลย"</p>
+                <p>คุยกับ AI ผู้ช่วยได้เลย ถามอะไรก็ได้</p>
+                <p className="ai-assistant-hint">ต้องการค้นข้อมูลในระบบจริง ใช้ปุ่ม "🔍 ค้นหาDB" ด้านล่างแทน</p>
               </div>
             )}
             {aiMessages.map((m, i) => (
@@ -809,21 +854,53 @@ export default function ChatWindow({
       {currentGroup && !selectMode && !showGallery && !showImportant && !isSearching &&
         (canSendDirect || currentGroup?.isAiAssistant) && (
         <div className="compose-bar">
-          <textarea
-            className="compose-input"
-            placeholder={currentGroup?.isAiAssistant ? 'ถามอะไรก็ได้ เช่น "ค้นหา สัญญา" หรือ "สรุปเลย"' : 'พิมพ์ข้อความส่งเข้าห้องนี้ หรือ "ค้นหา ชื่อไฟล์" / "สรุปเลย"...'}
-            rows={1}
-            value={composeText}
-            onChange={(e) => setComposeText(e.target.value)}
-            onKeyDown={handleComposeKeyDown}
-          />
-          <button
-            className="btn-compose-send"
-            disabled={!composeText.trim() || (currentGroup?.isAiAssistant ? aiThinking : checkingCommand)}
-            onClick={handleComposeSubmit}
-          >
-            ส่ง
-          </button>
+          {currentGroup?.isAiAssistant && (
+            <button
+              type="button"
+              className={`btn-db-search-toggle${dbSearchOpen ? ' active' : ''}`}
+              onClick={handleDbSearchToggle}
+              title="ค้นหาทั้งฐานข้อมูล (ต่างจากคุยกับ AI)"
+            >
+              🔍 ค้นหาDB
+            </button>
+          )}
+          {currentGroup?.isAiAssistant && dbSearchOpen ? (
+            <>
+              <input
+                ref={dbSearchInputRef}
+                className="compose-input"
+                placeholder="พิมพ์คำค้น แล้ว Enter (ค้นหาทุกกลุ่ม/DM ไม่จำกัดช่วงเวลา)"
+                value={dbSearchText}
+                onChange={(e) => setDbSearchText(e.target.value)}
+                onKeyDown={handleDbSearchKeyDown}
+              />
+              <button
+                className="btn-compose-send"
+                disabled={!dbSearchText.trim() || aiThinking}
+                onClick={handleDbSearchSubmit}
+              >
+                ค้นหา
+              </button>
+            </>
+          ) : (
+            <>
+              <textarea
+                className="compose-input"
+                placeholder={currentGroup?.isAiAssistant ? 'คุยกับ AI ผู้ช่วยได้เลย...' : 'พิมพ์ข้อความส่งเข้าห้องนี้ หรือ "ค้นหา ชื่อไฟล์" / "สรุปเลย"...'}
+                rows={1}
+                value={composeText}
+                onChange={(e) => setComposeText(e.target.value)}
+                onKeyDown={handleComposeKeyDown}
+              />
+              <button
+                className="btn-compose-send"
+                disabled={!composeText.trim() || (currentGroup?.isAiAssistant ? aiThinking : checkingCommand)}
+                onClick={handleComposeSubmit}
+              >
+                ส่ง
+              </button>
+            </>
+          )}
         </div>
       )}
 

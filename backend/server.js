@@ -15,6 +15,7 @@ const sequelize = require('./config/database');
 const corsOptions = require('./config/cors');
 const setupSockets = require('./sockets/index');
 const { startCleanupCron } = require('./services/cleanupService');
+const { startHealthCheckCron } = require('./services/healthCheckService');
 const { alertError, notifyAdmin } = require('./services/notifyService');
 
 
@@ -39,6 +40,7 @@ sequelize.query('CREATE SCHEMA IF NOT EXISTS payment_verification')
     server.listen(PORT, () => {
       console.log(`Server running on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
       startCleanupCron();
+      startHealthCheckCron();
       notifyAdmin('✅ LINE OA Server เริ่มทำงานแล้ว');
     });
   })

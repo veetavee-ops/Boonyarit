@@ -295,10 +295,19 @@
 .btn-compose-send:disabled { opacity: 0.5; cursor: not-allowed; }
 .btn-compose-send:hover:not(:disabled) { background: #1d4ed8; }
 
+.btn-db-search-toggle {
+  padding: 0 14px; border-radius: 10px; border: 1px solid var(--border-color);
+  background: var(--bg-surface); color: var(--text-primary); font-weight: 600;
+  cursor: pointer; font-family: 'Kanit', sans-serif; white-space: nowrap; flex-shrink: 0;
+}
+.btn-db-search-toggle:hover { border-color: #2563eb; color: #2563eb; }
+.btn-db-search-toggle.active { background: #2563eb; border-color: #2563eb; color: white; }
+
 /* ── DM คุยกับ AI ผู้ช่วย ──────────────────────────────────────── */
 .ai-assistant-messages {
   display: flex; flex-direction: column; gap: 10px; padding: 16px; overflow-y: auto;
 }
+.ai-assistant-hint { font-size: 12px; opacity: 0.7; margin-top: 4px; }
 .ai-msg {
   max-width: 75%; padding: 10px 14px; border-radius: 14px; font-size: 13px;
   line-height: 1.5; white-space: pre-wrap; word-break: break-word;

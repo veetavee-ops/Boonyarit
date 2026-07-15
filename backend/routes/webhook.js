@@ -11,6 +11,7 @@ const { ensureGroupFolder, uploadFileToDrive } = require('../services/driveServi
 const { alertError } = require('../services/notifyService');
 const { extractPaymentDocuments, matchPaymentItems, extractReceiptSummary } = require('../services/aiService');
 const { getSearchKeyword, getSummarizeKeyword, escapeRegex, matchSummarizeCommand, buildSearchReply, buildSummarizeReply } = require('../services/botCommandService');
+const { syncLedgerForVerification } = require('../services/ledgerService');
 
 // ถ้าคนส่งข้อความนี้ผูก LINE ID กับบัญชี admin ไว้ (เมนู "ตั้งค่าบัญชี")
 // ให้สิทธิ์เข้าถึงกลุ่ม/DM นี้ให้อัตโนมัติทันที — ไม่ต้องรอผูก LINE ID ใหม่หรือให้ superadmin ไปติ๊กเพิ่มเอง
@@ -328,8 +329,14 @@ async function handleEvent(event, io) {
             groupName = summary.groupName;
         } catch (e) {
             console.error('❌ Group Error:', e.message);
-            const group = await Group.findByPk(groupId);
-            if (group) groupName = group.groupName;
+            // getGroupSummary ล้มเหลว (เช่นกลุ่มใหม่ที่ LINE ยัง sync การเชิญบอทเข้ากลุ่มไม่เสร็จ — ขึ้น
+            // "โปรดรอสักครู่ให้เข้ากลุ่มก่อนจึงเริ่มแชท") ต้องมี Group row อยู่ดีเพื่อให้ Message.create()
+            // ผ่าน FK constraint จริง (messages_groupId_fkey → Groups.groupId) ได้ ไม่งั้นข้อความที่ส่งมา
+            // ระหว่างรอ sync จะ INSERT ไม่ผ่านแล้วหายถาวร (ทั้ง webhook batch จะ 500 ด้วย เพราะ error
+            // ไม่ถูกจับตรงจุดนี้) — ชื่อกลุ่มจริงจะถูกเติมอัตโนมัติจากข้อความถัดไปที่ getGroupSummary
+            // สำเร็จ เพราะโค้ดนี้ upsert ทุกข้อความอยู่แล้ว ไม่ต้องทำ retry เพิ่ม
+            const [group] = await Group.findOrCreate({ where: { groupId }, defaults: { groupName: null } });
+            groupName = group.groupName;
         }
         if (groupName) folderName = groupName;
     } else if (sourceType === 'user') {
@@ -561,7 +568,7 @@ async function processPaymentVerification(groupId, userId, images, replyToken, i
             console.error('❌ Payment verify image GCS fail:', e.message);
         }
 
-        await PaymentVerification.create({
+        const record = await PaymentVerification.create({
             groupId,
             submittedBy: userId,
             submittedAt: new Date(),
@@ -573,6 +580,12 @@ async function processPaymentVerification(groupId, userId, images, replyToken, i
             overallStatus,
             endingBalance: extracted.bankEndingBalance,
         });
+
+        try {
+            await syncLedgerForVerification(record);
+        } catch (e) {
+            console.error('❌ Ledger sync fail:', e.message);
+        }
 
         const total = extracted.reportItems.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
         if (overallStatus === 'matched') {
