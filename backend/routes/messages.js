@@ -6,7 +6,7 @@ const { summarizeAllChatsForDate, askQuestion } = require('../services/aiService
 const { deleteFileFromDrive } = require('../services/driveService');
 const { deleteFromGCS, getSignedUrl } = require('../services/gcsService');
 const { client } = require('../services/lineService');
-const { getSearchKeyword, getSummarizeKeyword, escapeRegex, matchSummarizeCommand, buildSearchReply, buildSummarizeReply } = require('../services/botCommandService');
+const { getSearchKeyword, getSummarizeKeyword, escapeRegex, matchSummarizeCommand, buildSearchReply, buildSummarizeReply, resolveProviderChain } = require('../services/botCommandService');
 const { Op } = require('sequelize');
 const authMiddleware = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/auth');
@@ -352,7 +352,9 @@ router.post('/ask', async (req, res) => {
       return res.json({ reply });
     }
 
-    const result = await askQuestion(trimmedText);
+    // fallback ของ askQuestion (ตอน compound-mini พัง) ไล่ตาม priority-chain เดียวกับงานสรุปแชท
+    const fallbackChain = await resolveProviderChain('auto').catch(() => []);
+    const result = await askQuestion(trimmedText, fallbackChain);
     res.json({ reply: result.text });
   } catch (error) {
     console.error('[ERROR] POST /api/messages/ask:', error);
@@ -423,7 +425,7 @@ router.post('/command', async (req, res) => {
 // POST /api/messages/summarize-day
 router.post('/summarize-day', async (req, res) => {
   try {
-    const { date, rangeValue, rangeUnit, groupId, provider = 'groq' } = req.body;
+    const { date, rangeValue, rangeUnit, groupId, provider = 'auto' } = req.body;
 
     if (!date) {
       return res.status(400).json({ error: 'date is required' });
@@ -480,7 +482,15 @@ router.post('/summarize-day', async (req, res) => {
       return res.json({ summary: 'ไม่มีข้อความในช่วงนี้', messageCount: 0, groupCount: 0 });
     }
 
-    const result = await summarizeAllChatsForDate(allMessages, provider);
+    // provider: 'auto' = ไล่ตามลำดับความสำคัญทั้งหมด (fallback อัตโนมัติ), เจาะจง id = บังคับตัวเดียว
+    let chain;
+    try {
+      chain = await resolveProviderChain(provider);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+
+    const result = await summarizeAllChatsForDate(allMessages, chain);
     res.json(result);
   } catch (error) {
     console.error('[ERROR] POST /api/messages/summarize-day:', error);

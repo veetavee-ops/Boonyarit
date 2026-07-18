@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { format } from "date-fns";
 import { checkAuth, logout, updateProfile } from "./api/auth";
 import { useGroups, useMessages } from "./hooks/useMessages";
 import { useSocket } from "./hooks/useSocket";
@@ -34,8 +33,7 @@ export default function App() {
   const [admin, setAdmin] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  const today = format(new Date(), "yyyy-MM-dd");
-  const [selectedDate, setSelectedDate] = useState(today);
+  const [selectedDate, setSelectedDate] = useState("all");
   const [selectedGroup, setSelectedGroup] = useState(null);
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState([]);
@@ -74,7 +72,7 @@ export default function App() {
   const [lineIdDraft, setLineIdDraft] = useState('');
   const [showChangePassword, setShowChangePassword] = useState(false); // true = กำลังเปิด modal เปลี่ยนรหัสผ่านอยู่
   const [showDashboard, setShowDashboard] = useState(false);
-  const [aiProvider, setAiProvider] = useState('groq');
+  const [aiProvider, setAiProvider] = useState('auto');
   // "load กี่วันย้อนหลัง" ของแชทที่เปิดอยู่ — null = โหลดทั้งหมด (ไม่จำกัดวัน) เหมือนเดิม
   const [daysBack, setDaysBack] = useState(null);
 
@@ -300,7 +298,12 @@ export default function App() {
     selectedGroup === AI_ASSISTANT_GROUP.groupId
       ? AI_ASSISTANT_GROUP
       : uniqueGroups.find((g) => g.groupId === selectedGroup);
-  const privateChats = [AI_ASSISTANT_GROUP, ...uniqueGroups.filter((g) => g.isPrivate)];
+  const privateChats = [
+    AI_ASSISTANT_GROUP,
+    ...uniqueGroups
+      .filter((g) => g.isPrivate)
+      .sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime)),
+  ];
   const thCollator = new Intl.Collator("th", { sensitivity: "base", numeric: true });
   const realGroups = uniqueGroups
     .filter((g) => !g.isPrivate)
@@ -488,6 +491,7 @@ export default function App() {
           aiProvider={aiProvider}
           onAiProviderChange={setAiProvider}
           onPinChange={setPinnedSummarySidebarWidth}
+          isSuperuser={admin.role === 'superuser'}
         />
       </div>
 

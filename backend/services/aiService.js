@@ -178,35 +178,122 @@ async function callGroq(prompt, model = GROQ_MODEL) {
   };
 }
 
-// ── Call Gemini ──────────────────────────────────────────────────────────────
-async function callGemini(prompt) {
-  if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY ยังไม่ได้ตั้งค่าใน .env');
+// ── ตัดอักขระควบคุม (newline/tab/ตัวควบคุมอื่นๆ) ที่มักติดมาจากการ copy-paste ──────────
+// ถ้าหลุดเข้าไปใน header เช่น Authorization: Bearer <key> ที่มี \n ปนอยู่ Node จะโยน
+// "Invalid character in header content" ทันที — .trim() เดิมตัดได้แค่หัว-ท้าย ไม่ตัดตรงกลาง
+function sanitizeCredential(str) {
+  return (str || '').replace(/[\r\n\t\x00-\x1F\x7F]/g, '').trim();
+}
 
-  try {
-    const response = await axios.post(
-      `${GEMINI_API}?key=${GEMINI_API_KEY}`,
-      {
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { maxOutputTokens: 2048, temperature: 0.7 },
-      },
-      { headers: { 'Content-Type': 'application/json' } }
-    );
+// ── ดึงข้อความคำตอบจาก response ของ endpoint แบบ OpenAI-compatible ──────────────
+// บาง provider (โดยเฉพาะที่ผ่าน gateway อย่าง OpenRouter) ตอบ HTTP 200 กลับมาได้ทั้งที่
+// เนื้อหาจริงเป็น error object (ไม่มี choices) — ถ้าเจอแบบนี้ ให้โยน error ที่มี response
+// ดิบแนบไปด้วยเลย จะได้เห็นว่า provider บ่นอะไรจริงๆ แทนที่จะเจอแค่ "Cannot read ... '0'"
+function extractChatReply(responseData) {
+  const choice = responseData?.choices?.[0];
+  const content = choice?.message?.content;
+  if (typeof content === 'string') return content;
 
-    return {
-      text: response.data.candidates[0].content.parts[0].text,
-      modelLabel: `Gemini ${GEMINI_MODEL}`,
-    };
-  } catch (err) {
-    const status = err.response?.status;
-    const msg = err.response?.data?.error?.message || err.message;
-    console.error(`❌ Gemini API error [${status}]:`, msg);
-    console.error('Key prefix:', GEMINI_API_KEY?.slice(0, 10) + '...');
-    throw err;
+  // reasoning model (เช่น GLM/DeepSeek-R1 ฯลฯ) ใช้ token ไปกับการ "คิด" ภายในก่อนตอบจริง
+  // ถ้า max_tokens ให้น้อยไป อาจหมดโควตาตั้งแต่ยังไม่ทันตอบ (finish_reason: "length", content: null)
+  // — นี่ไม่ใช่ error การเชื่อมต่อ (auth/URL/model ถูกหมดแล้ว) แค่ token ไม่พอ ต้องแยกข้อความให้ชัดเจน
+  if (choice?.finish_reason === 'length') {
+    throw new Error('เชื่อมต่อ provider สำเร็จ (auth/URL/model ถูกต้อง) แต่โมเดลนี้ตอบไม่ทันเพราะ token หมดก่อน — มักเป็น reasoning model ที่ใช้ token คิดเยอะ ไม่ใช่ปัญหาการเชื่อมต่อ');
   }
+
+  const raw = JSON.stringify(responseData ?? {}).slice(0, 300);
+  throw new Error(`รูปแบบคำตอบจาก provider ไม่ตรงตามที่คาด (ไม่มี choices[0].message.content) — ข้อมูลที่ได้: ${raw}`);
+}
+
+// ── Call provider แบบ OpenAI-compatible (custom provider ที่ user เพิ่มเอง) ──────
+// ครอบคลุม Groq/OpenRouter/Together/Fireworks/DeepSeek/Ollama ฯลฯ เพราะใช้ POST
+// {baseUrl}/chat/completions + Authorization: Bearer <apiKey> รูปแบบเดียวกันหมด
+async function callOpenAiCompatible(prompt, { baseUrl, apiKey, model, name }) {
+  const cleanUrl = sanitizeCredential(baseUrl);
+  const cleanKey = sanitizeCredential(apiKey);
+  const cleanModel = sanitizeCredential(model);
+  const url = cleanUrl.replace(/\/+$/, '') + '/chat/completions';
+
+  const response = await axios.post(
+    url,
+    {
+      model: cleanModel,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: 2048,
+      temperature: 0.7,
+    },
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${cleanKey}`,
+      },
+    }
+  );
+
+  return {
+    text: extractChatReply(response.data),
+    modelLabel: name || model,
+  };
+}
+
+// ── ทดสอบการเชื่อมต่อ custom AI provider — ส่ง prompt สั้นๆ ราคาถูก (max_tokens ต่ำ) ──────
+// ใช้ตอนกดปุ่ม "ทดสอบ" ในฟอร์ม/รายการ provider เพื่อเช็คว่า Base URL/API Key/Model ถูกต้องไหม
+// ก่อนเอาไปใช้จริงกับงานสรุปแชท — โยน error กลับไปให้ caller ตัดสินใจแสดงผลเอง
+async function testAiProviderConnection({ baseUrl, apiKey, model }) {
+  const cleanUrl = sanitizeCredential(baseUrl);
+  const cleanKey = sanitizeCredential(apiKey);
+  const cleanModel = sanitizeCredential(model);
+  const url = cleanUrl.replace(/\/+$/, '') + '/chat/completions';
+  const response = await axios.post(
+    url,
+    {
+      model: cleanModel,
+      messages: [{ role: 'user', content: 'ตอบกลับสั้นๆ แค่คำว่า "เชื่อมต่อสำเร็จ" คำเดียว ไม่ต้องอธิบายเพิ่ม' }],
+      // ให้พอสำหรับ reasoning model ที่ใช้ token คิดก่อนตอบจริง (เช่น GLM/DeepSeek-R1) — 20 tokens
+      // เดิมน้อยไปจนโดน finish_reason: "length" ก่อนจะได้ตอบ ทั้งที่ auth/URL/model ถูกต้องแล้ว
+      max_tokens: 300,
+      temperature: 0,
+    },
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${cleanKey}`,
+      },
+      timeout: 15000,
+    }
+  );
+  return extractChatReply(response.data);
+}
+
+// ── ไล่เรียก provider ทีละตัวตามลำดับที่ให้มาจนกว่าจะสำเร็จ ─────────────────────
+// ใช้กับ "โหมดอัตโนมัติ" (priority chain) — ทุก provider (Groq/Gemini/custom) เป็น config
+// รูปแบบเดียวกันหมดแล้ว (OpenAI-compatible) เลยเรียก callOpenAiCompatible วนตามลำดับได้ตรงๆ
+// providers: [{ name, baseUrl, apiKey, model }, ...] เรียงตาม priority ที่ต้องการลองก่อน-หลัง
+async function callProviderChain(prompt, providers) {
+  if (!providers || providers.length === 0) {
+    throw new Error('ยังไม่มี AI provider ให้ใช้งาน — เพิ่มอย่างน้อย 1 ตัวก่อน');
+  }
+  let lastError;
+  for (let i = 0; i < providers.length; i++) {
+    try {
+      const result = await callOpenAiCompatible(prompt, providers[i]);
+      if (i > 0) result.modelLabel += ' (fallback)';
+      return result;
+    } catch (err) {
+      lastError = err;
+      const msg = err.response?.data?.error?.message || err.message;
+      const nextNote = i < providers.length - 1 ? ` — ลองตัวถัดไป (${providers[i + 1].name})` : '';
+      console.warn(`⚠️ ${providers[i].name} failed: ${msg}${nextNote}`);
+    }
+  }
+  throw lastError;
 }
 
 // ── Main export ──────────────────────────────────────────────────────────────
-async function summarizeAllChatsForDate(allMessages, provider = 'groq') {
+// providerChain: array ของ [{ name, baseUrl, apiKey, model }, ...] เรียงตาม priority
+// เลือกเจาะจง 1 ตัว = ส่ง array ที่มีสมาชิกเดียว (ไม่ fallback) — ผู้เรียก (routes/messages.js,
+// botCommandService.js) เป็นคน resolve ว่าจะส่งทั้ง chain หรือตัวเดียวมาให้ฟังก์ชันนี้
+async function summarizeAllChatsForDate(allMessages, providerChain) {
   try {
     if (allMessages.length === 0) {
       return { summary: 'ไม่มีข้อความในช่วงนี้', messageCount: 0, groupCount: 0 };
@@ -214,18 +301,9 @@ async function summarizeAllChatsForDate(allMessages, provider = 'groq') {
 
     const { prompt, uniqueDayKeys, allGroupKeys, dateRangeLabel } = buildPrompt(allMessages);
 
-    console.log(`📝 Summarizing with ${provider === 'gemini' ? 'Gemini' : 'Groq'}: ${allMessages.length} msgs | ${uniqueDayKeys.length} day(s) | ${allGroupKeys.size} group(s)`);
+    console.log(`📝 Summarizing with [${providerChain.map(p => p.name).join(' → ')}]: ${allMessages.length} msgs | ${uniqueDayKeys.length} day(s) | ${allGroupKeys.size} group(s)`);
 
-    let result;
-    try {
-      result = provider === 'gemini' ? await callGemini(prompt) : await callGroq(prompt);
-    } catch (primaryError) {
-      // Fallback to the other provider if primary fails
-      const fallback = provider === 'gemini' ? 'groq' : 'gemini';
-      console.warn(`⚠️ ${provider} failed: ${primaryError.message} — trying ${fallback} as fallback`);
-      result = fallback === 'gemini' ? await callGemini(prompt) : await callGroq(prompt);
-      result.modelLabel += ' (fallback)';
-    }
+    const result = await callProviderChain(prompt, providerChain);
 
     console.log(`✅ Summary generated by ${result.modelLabel}`);
 
@@ -241,7 +319,7 @@ async function summarizeAllChatsForDate(allMessages, provider = 'groq') {
   } catch (error) {
     console.error('❌ AI Error:', error.message);
 
-    if (error.response?.status === 401) throw new Error('API Key ไม่ถูกต้อง ตรวจสอบใน .env');
+    if (error.response?.status === 401) throw new Error('API Key ไม่ถูกต้อง ตรวจสอบ provider ที่เลือก');
     if (error.response?.status === 429) throw new Error('ใช้งาน API เกิน rate limit กรุณารอสักครู่แล้วลองใหม่');
 
     throw new Error(error.response?.data?.error?.message || error.message);
@@ -436,12 +514,13 @@ function matchPaymentItems(reportItems, bankItems) {
 }
 
 // ── คุยกับ AI ผู้ช่วยแบบ free-form (ไม่ผูกคำสั่งตายตัว) — ใช้ใน DM "AI ผู้ช่วย" ─────
-// ใช้ compound-mini (มี web search ในตัว) เป็นหลัก เพราะคำถามแบบนี้อาจต้องการข้อมูลเรียลไทม์
+// ใช้ compound-mini (มี web search ในตัว) เป็นหลักเสมอ เพราะคำถามแบบนี้อาจต้องการข้อมูลเรียลไทม์
 // (เช่น ราคาหุ้นวันนี้) ที่โมเดลเปล่าไม่มีทางรู้ — เดาคำตอบเอง (hallucinate) ถ้าไม่มี tool ค้นเว็บ
-// ถ้า compound-mini โดน rate limit (มี quota ต่ำกว่าโมเดลปกติเพราะต้องค้นเว็บจริงทุกครั้ง) → fallback
-// ไปใช้ llama-3.3-70b-versatile ของ Groq เอง (เจ้าเดียวกัน เชื่อถือได้กว่า) แทนที่จะสลับไป Gemini
-// ซึ่งโปรเจกต์นี้โควต้า = 0 อยู่แล้ว (ไม่เคยผูก billing) จะพังซ้ำแน่ๆ
-async function askQuestion(question) {
+// compound-mini เป็นโมเดลเฉพาะของ Groq ไม่ได้อยู่ใน priority-chain ที่ user จัดการเอง (ไม่มี provider
+// อื่นมี web search ให้ทดแทน) — ถ้า compound-mini พัง (เช่นโดน rate limit) fallback ไปไล่ตาม
+// fallbackChain ที่ผู้เรียกส่งมา (routes/messages.js resolve จาก priority-chain เดียวกับงานสรุปแชท)
+// ถ้าไม่ส่งมาเลย fallback ไป llama-3.3-70b-versatile ของ Groq ตรงๆ เป็นค่า default กันพลาด
+async function askQuestion(question, fallbackChain = []) {
   const searchPrompt = `คุณเป็นผู้ช่วย AI ของทีมงานในระบบแชท LINE OA ตอบคำถามเป็นภาษาไทย กระชับ ชัดเจน
 ถ้าคำถามต้องการข้อมูลล่าสุด/เรียลไทม์ (เช่น ราคาหุ้น อัตราแลกเปลี่ยน ข่าว สภาพอากาศ) ให้ค้นเว็บจริง
 แล้วตอบเป็นตัวเลข/ข้อมูลจริงที่ค้นเจอเท่านั้น ห้ามใส่ placeholder หรือสัญลักษณ์แทนตัวเลข (เช่น XXXX.XX)
@@ -465,8 +544,12 @@ async function askQuestion(question) {
     try {
       result = await callGroq(searchPrompt, 'groq/compound-mini');
     } catch (primaryError) {
-      console.warn(`⚠️ compound-mini failed: ${primaryError.message} — falling back to llama-3.3-70b-versatile (ไม่มี web search)`);
-      result = await callGroq(noSearchPrompt);
+      console.warn(`⚠️ compound-mini failed: ${primaryError.message} — falling back (ไม่มี web search)`);
+      if (fallbackChain.length > 0) {
+        result = await callProviderChain(noSearchPrompt, fallbackChain);
+      } else {
+        result = await callGroq(noSearchPrompt);
+      }
       result.modelLabel += ' (fallback, ไม่มี web search)';
     }
     return { text: result.text, model: result.modelLabel };
@@ -528,4 +611,7 @@ module.exports = {
   matchPaymentItems,
   askQuestion,
   extractReceiptSummary,
+  testAiProviderConnection,
+  sanitizeCredential,
+  callProviderChain,
 };

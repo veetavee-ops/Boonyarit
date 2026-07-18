@@ -8,6 +8,7 @@ const GroupLabel = require('./GroupLabel');
 const Setting = require('./Setting');
 const PaymentVerification = require('./PaymentVerification');
 const AccountLedgerEntry = require('./AccountLedgerEntry');
+const AiProvider = require('./AiProvider');
 
 // ความสัมพันธ์ระหว่าง Message, User, Group
 Message.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -50,4 +51,5 @@ module.exports = {
   Setting,
   PaymentVerification,
   AccountLedgerEntry,
+  AiProvider,
 };

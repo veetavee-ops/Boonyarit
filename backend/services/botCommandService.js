@@ -1,6 +1,28 @@
 const { Op, literal } = require('sequelize');
-const { Message, User, Group, Setting } = require('../models/index');
+const { Message, User, Group, Setting, AiProvider } = require('../models/index');
 const { summarizeAllChatsForDate } = require('./aiService');
+
+// ── แปลง provider selector ('auto' หรือ id) เป็น array config พร้อมเรียก AI จริง ─────────
+// 'auto' = ทุก provider เรียงตาม priority (โหมด fallback ไล่ทีละตัวจนกว่าจะสำเร็จ)
+// ระบุ id ตรงๆ = บังคับใช้ตัวนั้นตัวเดียว ไม่ fallback ไปตัวอื่น
+// รองรับ 'groq'/'gemini' (string เก่า) ด้วย เผื่อ SummarySidebarLegacy (frozen backup สำหรับ
+// rollback ด่วน) ยังส่งค่าแบบเดิมมา — หาแถว built-in ที่ตรงชื่อแทนการ findByPk ตรงๆ
+async function resolveProviderChain(providerSelector) {
+    if (providerSelector && providerSelector !== 'auto') {
+        let single;
+        if (providerSelector === 'groq' || providerSelector === 'gemini') {
+            const namePrefix = providerSelector === 'groq' ? 'Groq' : 'Gemini';
+            single = await AiProvider.findOne({ where: { isBuiltIn: true, name: { [Op.like]: `${namePrefix}%` } } });
+        } else {
+            single = await AiProvider.findByPk(providerSelector);
+        }
+        if (!single) throw new Error('ไม่พบ AI provider ที่เลือก อาจถูกลบไปแล้ว');
+        return [{ name: single.name, baseUrl: single.baseUrl, apiKey: single.apiKey, model: single.model }];
+    }
+    const all = await AiProvider.findAll({ order: [['priority', 'ASC']] });
+    if (all.length === 0) throw new Error('ยังไม่มี AI provider ในระบบ — เพิ่มอย่างน้อย 1 ตัวก่อนใช้งาน');
+    return all.map((p) => ({ name: p.name, baseUrl: p.baseUrl, apiKey: p.apiKey, model: p.model }));
+}
 
 // คำสั่งค้นหาไฟล์ — ตั้งค่าได้เองในหน้า admin panel (ไม่ต้อง hardcode/แก้โค้ด)
 async function getSearchKeyword() {
@@ -162,7 +184,8 @@ async function buildSummarizeReply(daysBack, scopeWhere = {}, scopeLabel = '') {
         return `📋 ${rangeLabel}ยังไม่มีข้อความให้สรุปครับ${scopeSuffix}`;
     }
 
-    const result = await summarizeAllChatsForDate(messages, 'groq');
+    const chain = await resolveProviderChain('auto');
+    const result = await summarizeAllChatsForDate(messages, chain);
     return `📋 สรุปแชท${rangeLabel} (${result.messageCount} ข้อความ)${scopeSuffix}\n\n${result.summary}`;
 }
 
@@ -173,4 +196,5 @@ module.exports = {
     matchSummarizeCommand,
     buildSearchReply,
     buildSummarizeReply,
+    resolveProviderChain,
 };

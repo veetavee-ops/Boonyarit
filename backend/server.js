@@ -17,6 +17,7 @@ const setupSockets = require('./sockets/index');
 const { startCleanupCron } = require('./services/cleanupService');
 const { startHealthCheckCron } = require('./services/healthCheckService');
 const { alertError, notifyAdmin } = require('./services/notifyService');
+const { seedBuiltInAiProviders } = require('./services/seedAiProviders');
 
 
 const server = http.createServer(app);
@@ -34,6 +35,7 @@ const syncOptions = {};
 // ต้องสร้าง schema เองก่อน เพราะ sequelize.sync() ไม่สร้าง schema ให้อัตโนมัติ
 sequelize.query('CREATE SCHEMA IF NOT EXISTS payment_verification')
   .then(() => sequelize.sync(syncOptions))
+  .then(() => seedBuiltInAiProviders())
   .then(() => {
     console.log('Database synchronized');
     const PORT = process.env.PORT || 3000;
