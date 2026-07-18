@@ -3,9 +3,16 @@ import { fetchUsers, createUser, updateUserLineId, updateUserRole, deleteUser, a
 import { fetchGroups } from '../api/messages';
 import { fetchLineUsers, toggleLineUserSearch } from '../api/lineUsers';
 import { fetchSettings, updateSetting } from '../api/settings';
-import { toggleGroupPaymentVerify } from '../api/paymentVerification';
-import { toggleGroupReceiptSummary } from '../api/receiptSummary';
+import { toggleGroupFlag } from '../api/groupFlags';
+import { getInitials, getColor } from '../utils/helpers';
 import './AdminPanel.css';
+
+// ธงต่อกลุ่มที่เปิด/ปิดได้ในการ์ด "ตั้งค่าเฉพาะกลุ่ม" — เพิ่มฟีเจอร์ใหม่ในอนาคตแค่เพิ่ม object ในนี้
+// (ต้องเพิ่มชื่อ field ในฝั่ง backend ALLOWED_GROUP_FLAG_FIELDS ด้วย ดู routes/groups.js)
+const GROUP_FLAGS = [
+  { field: 'isPaymentVerifyGroup', label: 'ตรวจสอบการโอนเงิน' },
+  { field: 'isReceiptSummaryGroup', label: 'สรุปบิลซื้อของ' },
+];
 
 export default function AdminPanel() {
   const [users, setUsers] = useState([]);
@@ -33,6 +40,8 @@ export default function AdminPanel() {
   const [receiptSummaryKeyword, setReceiptSummaryKeyword] = useState('225588');
   const [receiptSummaryKeywordSaving, setReceiptSummaryKeywordSaving] = useState(false);
   const [receiptSummaryKeywordSaved, setReceiptSummaryKeywordSaved] = useState(false);
+  // ค้นหาชื่อกลุ่มในการ์ด "ตั้งค่าเฉพาะกลุ่ม" (เปิด/ปิดธงฟีเจอร์ต่อกลุ่ม)
+  const [groupFlagSearch, setGroupFlagSearch] = useState('');
 
   useEffect(() => {
     Promise.all([fetchUsers(), fetchGroups()])
@@ -101,25 +110,15 @@ export default function AdminPanel() {
     }
   };
 
-  const handleTogglePaymentVerify = async (groupId, current) => {
+  // เปิด/ปิดธงต่อกลุ่ม — ใช้ endpoint เดียวรวมทุกฟีเจอร์ใน GROUP_FLAGS (ดูคอมเมนต์บนสุดของไฟล์)
+  const handleToggleGroupFlag = async (groupId, field, current) => {
     try {
-      await toggleGroupPaymentVerify(groupId, !current);
+      await toggleGroupFlag(groupId, field, !current);
       setGroups((prev) =>
-        prev.map((g) => g.groupId === groupId ? { ...g, isPaymentVerifyGroup: !current } : g)
+        prev.map((g) => g.groupId === groupId ? { ...g, [field]: !current } : g)
       );
     } catch (err) {
-      setError('อัปเดตกลุ่มตรวจสอบการเงินไม่สำเร็จ');
-    }
-  };
-
-  const handleToggleReceiptSummary = async (groupId, current) => {
-    try {
-      await toggleGroupReceiptSummary(groupId, !current);
-      setGroups((prev) =>
-        prev.map((g) => g.groupId === groupId ? { ...g, isReceiptSummaryGroup: !current } : g)
-      );
-    } catch (err) {
-      setError('อัปเดตกลุ่มสรุปบิลซื้อของไม่สำเร็จ');
+      setError('อัปเดตธงกลุ่มไม่สำเร็จ');
     }
   };
 
@@ -460,52 +459,59 @@ export default function AdminPanel() {
         </div>
       </div>
 
-      {/* ── กลุ่มตรวจสอบการโอน-จ่ายเงิน (OCR) ── */}
+      {/* ── ตั้งค่าเฉพาะกลุ่ม (ธงฟีเจอร์) — ค้นหากลุ่มแล้วเปิด/ปิดได้หลายฟีเจอร์ต่อแถวเดียว ── */}
       <div className="ap-card ap-settings-card">
-        <h2 className="ap-card-title">กลุ่มตรวจสอบการโอนเงิน (OCR)</h2>
+        <h2 className="ap-card-title">ตั้งค่าเฉพาะกลุ่ม</h2>
         <p className="ap-note">
-          เปิดเฉพาะกลุ่มที่จะให้เจ้าหน้าที่ส่งรูป "รายงานตั้งเบิก" + "สกรีนธนาคาร" 2 รูปติดกัน
-          เพื่อให้ AI ตรวจสอบยอดอัตโนมัติ — กลุ่มอื่นที่ไม่เปิดจะไม่ถูกแตะต้องเลย
+          ค้นหากลุ่มแล้วเปิด/ปิดฟีเจอร์เฉพาะกลุ่มได้เลย — กลุ่มที่ไม่เปิดธงจะไม่ถูกแตะต้องเลย
+          (ตรวจสอบการโอนเงิน: ส่งรูป "รายงานตั้งเบิก" + "สกรีนธนาคาร" 2 รูปติดกัน / สรุปบิลซื้อของ:
+          พิมพ์คำสั่งด้านบนแล้วส่งรูปบิล 1-10 รูป)
         </p>
-        <ul className="ap-group-list">
-          {groups.map((g) => (
-            <li key={g.groupId} className="ap-group-item">
-              <div className="ap-setting-row">
-                <span>{g.groupName}</span>
-                <button
-                  className={`ap-toggle${g.isPaymentVerifyGroup ? ' ap-toggle--on' : ''}`}
-                  onClick={() => handleTogglePaymentVerify(g.groupId, g.isPaymentVerifyGroup)}
-                >
-                  {g.isPaymentVerifyGroup ? 'เปิดอยู่' : 'ปิดอยู่'}
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </div>
-
-      {/* ── กลุ่มสรุปบิลซื้อของ (OCR) ── */}
-      <div className="ap-card ap-settings-card">
-        <h2 className="ap-card-title">กลุ่มสรุปบิลซื้อของ (OCR)</h2>
-        <p className="ap-note">
-          เปิดเฉพาะกลุ่มที่จะให้พิมพ์คำสั่งด้านบนแล้วส่งรูปบิล 1-10 รูป ให้ AI สรุปเป็นข้อความอัตโนมัติ
-          ผลสรุปตอบกลับใน LINE เท่านั้น ไม่ถูกเก็บไว้ดูย้อนหลัง — กลุ่มอื่นที่ไม่เปิดจะไม่ถูกแตะต้องเลย
-        </p>
-        <ul className="ap-group-list">
-          {groups.map((g) => (
-            <li key={g.groupId} className="ap-group-item">
-              <div className="ap-setting-row">
-                <span>{g.groupName}</span>
-                <button
-                  className={`ap-toggle${g.isReceiptSummaryGroup ? ' ap-toggle--on' : ''}`}
-                  onClick={() => handleToggleReceiptSummary(g.groupId, g.isReceiptSummaryGroup)}
-                >
-                  {g.isReceiptSummaryGroup ? 'เปิดอยู่' : 'ปิดอยู่'}
-                </button>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <input
+          type="text"
+          className="ap-input ap-group-flag-search"
+          placeholder="🔍 ค้นหาชื่อกลุ่ม..."
+          value={groupFlagSearch}
+          onChange={(e) => setGroupFlagSearch(e.target.value)}
+        />
+        {(() => {
+          const filtered = groups.filter((g) =>
+            (g.groupName || '').toLowerCase().includes(groupFlagSearch.trim().toLowerCase())
+          );
+          if (filtered.length === 0) {
+            return <p className="ap-empty">ไม่พบกลุ่มที่ตรงกับคำค้นหา</p>;
+          }
+          return (
+            <ul className="ap-group-list">
+              {filtered.map((g) => (
+                <li key={g.groupId} className="ap-group-item ap-group-item--flags">
+                  <div className="ap-group-flag-identity">
+                    {g.pictureUrl ? (
+                      <img className="ap-group-flag-avatar ap-group-flag-avatar--img" src={g.pictureUrl} alt="" />
+                    ) : (
+                      <span className="ap-group-flag-avatar" style={{ background: getColor(g.groupName) }}>
+                        {getInitials(g.groupName)}
+                      </span>
+                    )}
+                    <span className="ap-group-flag-name">{g.groupName}</span>
+                  </div>
+                  <div className="ap-group-flag-chips">
+                    {GROUP_FLAGS.map((flag) => (
+                      <button
+                        key={flag.field}
+                        type="button"
+                        className={`ap-flag-chip${g[flag.field] ? ' ap-flag-chip--on' : ''}`}
+                        onClick={() => handleToggleGroupFlag(g.groupId, flag.field, g[flag.field])}
+                      >
+                        {flag.label}
+                      </button>
+                    ))}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          );
+        })()}
       </div>
 
       {/* ── LINE Users: จัดการสิทธิ์ค้นหาผ่าน bot ── */}

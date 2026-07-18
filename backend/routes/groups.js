@@ -207,34 +207,25 @@ router.get('/stats', async (req, res) => {
   }
 });
 
-// PATCH /api/groups/:groupId/payment-verify — เปิด/ปิดฟีเจอร์ตรวจสอบการโอนเงิน OCR สำหรับกลุ่มนี้
-// เฉพาะ role admin เท่านั้น (เหมือนหน้า Dashboard ตรวจสอบเงิน)
-router.patch('/:groupId/payment-verify', requireAdmin, async (req, res) => {
+// PATCH /api/groups/:groupId/flags — เปิด/ปิด "ธง" ต่อกลุ่ม (รวมทุกฟีเจอร์แบบ per-group toggle ไว้ endpoint เดียว)
+// body: { field, value } — field ต้องอยู่ใน whitelist เท่านั้น กัน mass-assignment ไปคอลัมน์อื่นของ Group
+// เพิ่มฟีเจอร์ใหม่ในอนาคต = เพิ่มคอลัมน์ boolean ใน Group model แล้วเติมชื่อ field ในนี้บรรทัดเดียว (คู่กับ
+// GROUP_FLAGS ฝั่ง frontend ใน AdminPanel.jsx) เฉพาะ role admin เท่านั้น (เหมือนหน้า Dashboard ตรวจสอบเงิน)
+const ALLOWED_GROUP_FLAG_FIELDS = ['isPaymentVerifyGroup', 'isReceiptSummaryGroup'];
+
+router.patch('/:groupId/flags', requireAdmin, async (req, res) => {
   try {
-    const { isPaymentVerifyGroup } = req.body;
+    const { field, value } = req.body;
+    if (!ALLOWED_GROUP_FLAG_FIELDS.includes(field)) {
+      return res.status(400).json({ error: 'ฟิลด์นี้ไม่ได้รับอนุญาตให้แก้ผ่าน endpoint นี้' });
+    }
     const group = await Group.findByPk(req.params.groupId);
     if (!group) return res.status(404).json({ error: 'ไม่พบกลุ่ม' });
 
-    await group.update({ isPaymentVerifyGroup: !!isPaymentVerifyGroup });
-    res.json({ groupId: group.groupId, isPaymentVerifyGroup: group.isPaymentVerifyGroup });
+    await group.update({ [field]: !!value });
+    res.json({ groupId: group.groupId, [field]: !!group[field] });
   } catch (error) {
-    console.error('[ERROR] PATCH /api/groups/:groupId/payment-verify:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// PATCH /api/groups/:groupId/receipt-summary — เปิด/ปิดฟีเจอร์สรุปบิลซื้อของ OCR สำหรับกลุ่มนี้
-// เฉพาะ role admin เท่านั้น (เหมือน payment-verify)
-router.patch('/:groupId/receipt-summary', requireAdmin, async (req, res) => {
-  try {
-    const { isReceiptSummaryGroup } = req.body;
-    const group = await Group.findByPk(req.params.groupId);
-    if (!group) return res.status(404).json({ error: 'ไม่พบกลุ่ม' });
-
-    await group.update({ isReceiptSummaryGroup: !!isReceiptSummaryGroup });
-    res.json({ groupId: group.groupId, isReceiptSummaryGroup: group.isReceiptSummaryGroup });
-  } catch (error) {
-    console.error('[ERROR] PATCH /api/groups/:groupId/receipt-summary:', error.message);
+    console.error('[ERROR] PATCH /api/groups/:groupId/flags:', error.message);
     res.status(500).json({ error: error.message });
   }
 });

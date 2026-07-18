@@ -15,12 +15,6 @@ axiosInstance.interceptors.request.use((config) => {
   return config
 })
 
-// เปิด/ปิดฟีเจอร์ตรวจสอบการโอนเงิน (OCR) สำหรับกลุ่มหนึ่งๆ
-export async function toggleGroupPaymentVerify(groupId, isPaymentVerifyGroup) {
-  const res = await axiosInstance.patch(`/api/groups/${groupId}/payment-verify`, { isPaymentVerifyGroup })
-  return res.data
-}
-
 export async function fetchPaymentVerifications({ groupId, status } = {}) {
   const res = await axiosInstance.get('/api/payment-verification', { params: { groupId, status } })
   return res.data
