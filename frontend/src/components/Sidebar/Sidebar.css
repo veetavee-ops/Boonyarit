@@ -47,10 +47,8 @@
   z-index: 100;
 }
 
-/* ─── Pin button ──────────────────────────────────────────────── */
+/* ─── Pin button ── อยู่ชิดขวาสุดของแถว label-tabs-bar (ไม่ absolute แล้ว) ── */
 .sidebar-pin-btn {
-  position: absolute;
-  top: 12px; right: 12px;
   background: none;
   border: none;
   color: var(--text-tertiary);
@@ -58,43 +56,13 @@
   padding: 5px;
   border-radius: 6px;
   display: flex;
+  flex-shrink: 0;
+  margin-left: auto;
   transition: all 0.15s;
   transform: rotate(45deg);
 }
 .sidebar-pin-btn:hover { background: rgba(58,47,38,0.08); color: var(--text-primary); }
 .sidebar-pin-btn--active { color: var(--primary-color); transform: rotate(0deg); }
-
-/* ─── Header ──────────────────────────────────────────────────── */
-.sidebar-header {
-  position: relative;
-  padding: 14px;
-  padding-right: 40px;
-  background: var(--bg-elevated);
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-  transition: padding 0.2s;
-}
-.sidebar-header--collapsed { padding-bottom: 12px; }
-.sidebar-header--collapsed .sidebar-brand {
-  margin-bottom: 0; padding-bottom: 0; border-bottom: none;
-}
-
-.sidebar-brand {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border-color);
-  cursor: pointer;
-}
-.sidebar-brand-title {
-  font-size: 13px; font-weight: 700;
-  color: var(--text-primary); line-height: 1.3; letter-spacing: 0.2px;
-}
-.sidebar-brand-sub {
-  font-size: 10.5px; color: var(--text-tertiary); font-weight: 400; margin-top: 1px;
-}
 
 /* ─── Controls ────────────────────────────────────────────────── */
 .controls-section { display: flex; flex-direction: column; gap: 9px; }
@@ -170,26 +138,6 @@
 .sidebar-content::-webkit-scrollbar { width: 3px; }
 .sidebar-content::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
 
-.content-header {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: 10px 14px 6px;
-  border-bottom: 1px solid var(--border-color);
-  margin-bottom: 4px;
-}
-.content-header-left {
-  display: flex; align-items: center; gap: 6px;
-  color: var(--text-tertiary); font-size: 11px; font-weight: 600;
-  letter-spacing: 0.5px; text-transform: uppercase;
-}
-.content-header-left svg { opacity: 0.7; flex-shrink: 0; }
-.content-header-count {
-  font-size: 10px; font-weight: 700; color: #fff;
-  background: var(--primary-color);
-  min-width: 18px; height: 18px; padding: 0 6px;
-  border-radius: 9px; display: inline-flex; align-items: center; justify-content: center;
-  box-shadow: 0 1px 4px rgba(249,115,22,0.35);
-}
-
 /* ─── Section ─────────────────────────────────────────────────── */
 .section { margin-bottom: 2px; }
 .section-header-clickable {
@@ -215,7 +163,6 @@
   color: var(--text-tertiary); display: flex; align-items: center;
   transition: transform 0.2s; flex-shrink: 0;
 }
-.sidebar-brand .chevron { color: var(--text-secondary); }
 
 /* ─── Group Sort ──────────────────────────────────────────────── */
 .group-sort-bar { padding: 4px 8px 3px; display: flex; justify-content: flex-end; }
@@ -263,6 +210,17 @@
   font-weight: 400; flex: 1; min-width: 0; transition: color 0.15s;
 }
 
+.group-time {
+  font-size: 10.5px; color: var(--text-tertiary);
+  flex-shrink: 0; white-space: nowrap;
+}
+
+/* เส้นคั่นระหว่างกลุ่มที่ใช้งาน "วันนี้" กับกลุ่มที่เก่ากว่า (เรียงตามเวลาเท่านั้น) */
+.group-list-divider {
+  height: 0; margin: 6px 6px 7px;
+  border-top: 1px dashed rgba(58,47,38,0.18);
+}
+
 .empty-groups {
   padding: 12px 16px; text-align: center;
   color: var(--text-tertiary); font-size: 12px; font-style: italic;
@@ -299,7 +257,7 @@
 /* แถวปุ่ม tab แสดงอยู่เหนือ group list */
 .label-tabs-bar {
   display: flex; flex-wrap: wrap; gap: 4px;
-  padding: 8px 10px 6px;
+  padding: 6px 10px 6px;
   border-bottom: 1px solid var(--border-color);
 }
 

@@ -1,7 +1,9 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, Fragment } from "react";
 import {
   getInitials,
   getColor,
+  formatGroupTime,
+  isToday,
 } from "../../utils/helpers";
 import { fetchLabels, createLabel, deleteLabel, assignGroup, unassignGroup } from "../../api/labels";
 import "./Sidebar.css";
@@ -217,43 +219,8 @@ export default function Sidebar({
           className="sidebar-resize-handle"
           onMouseDown={onResizeMouseDown}
         />
-        <div className="sidebar-header">
-          <button
-            className={`sidebar-pin-btn${isPinned ? " sidebar-pin-btn--active" : ""}`}
-            onClick={togglePin}
-            title={isPinned ? "เลิกปักหมุด" : "ปักหมุดเมนูไว้"}
-            aria-label={isPinned ? "เลิกปักหมุด" : "ปักหมุดเมนูไว้"}
-          >
-            <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
-              <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
-            </svg>
-          </button>
-          <div className="sidebar-brand">
-            <div>
-              <div className="sidebar-brand-title">กลุ่มแชท</div>
-              <div className="sidebar-brand-sub">รายชื่อกลุ่มและ label</div>
-            </div>
-          </div>
-        </div>
-
         <div className="sidebar-content">
-          {/* ── Content Header ── */}
-          <div className="content-header">
-            <div className="content-header-left">
-              <svg
-                viewBox="0 0 24 24"
-                fill="currentColor"
-                width="14"
-                height="14"
-              >
-                <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2z" />
-              </svg>
-              <span>กลุ่ม</span>
-            </div>
-            <span className="content-header-count">{realGroups.length}</span>
-          </div>
-
-          {/* ── Label Tabs — แถบกรองกลุ่มตาม label ── */}
+          {/* ── Label Tabs — แถบกรองกลุ่มตาม label + ปุ่มปักหมุด (ย้ายมาจาก header เดิม) ── */}
           <div className="label-tabs-bar">
             {/* Tab "ทั้งหมด" */}
             <button
@@ -292,6 +259,18 @@ export default function Sidebar({
               onClick={() => setShowNewLabelForm((v) => !v)}
               title="เพิ่ม label"
             >+</button>
+
+            {/* ปุ่มปักหมุด — ชิดขวาสุดของแถวนี้ */}
+            <button
+              className={`sidebar-pin-btn${isPinned ? " sidebar-pin-btn--active" : ""}`}
+              onClick={togglePin}
+              title={isPinned ? "เลิกปักหมุด" : "ปักหมุดเมนูไว้"}
+              aria-label={isPinned ? "เลิกปักหมุด" : "ปักหมุดเมนูไว้"}
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14">
+                <path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5.2v6h1.6v-6H18v-2l-2-2z" />
+              </svg>
+            </button>
           </div>
 
           {/* ── ฟอร์มสร้าง label ใหม่ (แสดงเมื่อกด +) ── */}
@@ -331,7 +310,7 @@ export default function Sidebar({
               onClick={() => setIsGroupsOpen((v) => !v)}
             >
               <span className="section-title">
-                กลุ่ม
+                กลุ่มแชท
                 {realGroups.length > 0 && (
                   <span className="section-count">{realGroups.length}</span>
                 )}
@@ -384,8 +363,20 @@ export default function Sidebar({
                     );
                   }
 
-                  return filtered.map((g) => (
-                    <div key={g.groupId} className="group-btn-wrap">
+                  // เส้นคั่น "วันนี้ / เก่ากว่านี้" — โชว์เฉพาะตอนเรียงตามเวลา (name sort ไม่เรียงตามวันที่ต่อเนื่อง)
+                  const showTimeDivider = groupSortBy === 'time' || groupSortBy === 'time-asc';
+                  let prevIsToday = null;
+
+                  return filtered.map((g) => {
+                    const groupIsToday = isToday(g.lastMessageTime);
+                    const showDivider =
+                      showTimeDivider && prevIsToday !== null && prevIsToday !== groupIsToday;
+                    prevIsToday = groupIsToday;
+
+                    return (
+                    <Fragment key={g.groupId}>
+                      {showDivider && <div className="group-list-divider" />}
+                    <div className="group-btn-wrap">
                       {/* ปุ่มหลักเลือกกลุ่ม — ไม่มีปุ่มซ้อนอยู่ข้างใน */}
                       <button
                         className={`group-btn ${selectedGroup === g.groupId ? "active" : ""}`}
@@ -407,6 +398,10 @@ export default function Sidebar({
                               <span key={l.id} className="group-label-dot" style={{ background: l.color }} title={l.name} />
                             ))}
                         </span>
+                        {/* เวลา/วันที่ของข้อความล่าสุด — วันนี้โชว์เวลา, เก่ากว่าโชว์วันที่สั้นๆ */}
+                        {g.lastMessageTime && (
+                          <span className="group-time">{formatGroupTime(g.lastMessageTime)}</span>
+                        )}
                       </button>
 
                       {/* ปุ่มไอคอน tag — อยู่นอก group-btn เป็น sibling, position absolute */}
@@ -451,7 +446,9 @@ export default function Sidebar({
                         </div>
                       )}
                     </div>
-                  ));
+                    </Fragment>
+                    );
+                  });
                 })()}
               </div>
             )}
@@ -467,22 +464,39 @@ export default function Sidebar({
                 </span>
               </div>
               <div className="group-list">
-                {privateChats.map((g) => (
-                  <button
-                    key={g.groupId}
-                    className={`group-btn ${selectedGroup === g.groupId ? "active" : ""}`}
-                    onClick={() => onSelectGroup(g.groupId)}
-                  >
-                    {g.pictureUrl ? (
-                      <img className="group-avatar group-avatar--img" src={g.pictureUrl} alt={g.groupName} />
-                    ) : (
-                      <div className="group-avatar" style={{ background: getColor(g.groupName) }}>
-                        {getInitials(g.groupName)}
-                      </div>
-                    )}
-                    <span className="group-name">{g.groupName}</span>
-                  </button>
-                ))}
+                {(() => {
+                  // เส้นคั่น "วันนี้ / เก่ากว่านี้" เหมือนหมวดกลุ่ม — privateChats เรียงตามเวลาล่าสุดมาแล้วจาก App.jsx
+                  // AI ผู้ช่วยไม่มี lastMessageTime — ข้ามไม่ให้กระทบการตรวจจับ "วันนี้/เก่ากว่า" ของรายการจริง
+                  let prevIsToday = null;
+                  return privateChats.map((g) => {
+                    const hasTime = !!g.lastMessageTime;
+                    const chatIsToday = hasTime && isToday(g.lastMessageTime);
+                    const showDivider = hasTime && prevIsToday !== null && prevIsToday !== chatIsToday;
+                    if (hasTime) prevIsToday = chatIsToday;
+
+                    return (
+                      <Fragment key={g.groupId}>
+                        {showDivider && <div className="group-list-divider" />}
+                        <button
+                          className={`group-btn ${selectedGroup === g.groupId ? "active" : ""}`}
+                          onClick={() => onSelectGroup(g.groupId)}
+                        >
+                          {g.pictureUrl ? (
+                            <img className="group-avatar group-avatar--img" src={g.pictureUrl} alt={g.groupName} />
+                          ) : (
+                            <div className="group-avatar" style={{ background: getColor(g.groupName) }}>
+                              {getInitials(g.groupName)}
+                            </div>
+                          )}
+                          <span className="group-name">{g.groupName}</span>
+                          {g.lastMessageTime && (
+                            <span className="group-time">{formatGroupTime(g.lastMessageTime)}</span>
+                          )}
+                        </button>
+                      </Fragment>
+                    );
+                  });
+                })()}
               </div>
             </div>
           )}

@@ -14,6 +14,36 @@ export const formatDateLabel = (date) => {
 
 export const formatTime = (iso) => format(new Date(iso), 'HH:mm')
 
+// รูปแบบวันที่สั้นแบบ วัน + เดือน/ปีย่อภาษาไทย ใช้กับตัวเลือกวันที่สรุป เช่น "17 ก.ค. 26"
+export const formatDateShort = (date) =>
+  format(new Date(date), 'd MMM yy', { locale: th })
+
+// label ของตัวเลือก "วันที่สรุป" — วันนี้/เมื่อวานใส่วงเล็บวันที่กำกับ (มีประโยชน์),
+// วันอื่นๆ โชว์วันที่แบบสั้นตรงๆ ไม่ซ้ำซ้อนกับ formatDateLabel (ซึ่งไม่มีปี) อีกรอบ
+export const formatDateOptionLabel = (date) => {
+  const label = formatDateLabel(date)
+  if (label === 'วันนี้' || label === 'เมื่อวาน') return `${label} (${formatDateShort(date)})`
+  return formatDateShort(date)
+}
+
+// เวลาแสดงในรายการกลุ่ม (sidebar) — วันนี้โชว์แค่เวลา (HH:mm), เก่ากว่านั้นโชว์วันที่แบบสั้น (d MMM)
+export const formatGroupTime = (iso) => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d)) return ''
+  const today = format(new Date(), 'yyyy-MM-dd')
+  const dateStr = format(d, 'yyyy-MM-dd')
+  return dateStr === today ? format(d, 'HH:mm') : format(d, 'd MMM yy', { locale: th })
+}
+
+// เช็คว่าเวลาที่ให้มาเป็น "วันนี้" ไหม (เทียบตามเวลาเครื่อง/browser)
+export const isToday = (iso) => {
+  if (!iso) return false
+  const d = new Date(iso)
+  if (isNaN(d)) return false
+  return format(d, 'yyyy-MM-dd') === format(new Date(), 'yyyy-MM-dd')
+}
+
 export const getInitials = (name) => {
   if (!name) return '?'
   const parts = name.split(' ')
