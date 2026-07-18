@@ -31,7 +31,108 @@
 
 ## Session Status
 
-### อัพเดท: 11 กรกฎาคม 2569 (session 14)
+### อัพเดท: 18 กรกฎาคม 2569 (session 15)
+
+### ✅ Session 15 — ระบบ AI provider รวมเป็นหนึ่งเดียว + priority-chain fallback + Sidebar/AdminPanel UI (18 ก.ค. 69)
+
+**⚠️ สถานะ ณ ตอนจบ session — ยังไม่ commit/push เลยสักบรรทัด (working tree มีงานเปลี่ยนเยอะมาก):**
+ทุกอย่างด้านล่างนี้ยังอยู่ใน uncommitted changes ทั้งหมด ต้อง `git add` + commit (แนะนำแตกเป็นหลาย commit
+ตามหัวข้อ ไม่ใช่ commit เดียวรวด เพราะเปลี่ยนเยอะและคนละเรื่องกัน) ก่อน push — **ยังไม่ได้ทดสอบผ่าน UI
+จริงในเบราว์เซอร์เลยสักจุด** (ทดสอบผ่าน Node script เรียก backend ตรงๆ เท่านั้น) ต้องรัน dev แล้วคลิกทดสอบ
+จริงก่อน push ขึ้น production
+
+**🆕 Sidebar (ซ้าย) — เพิ่มวันที่/เวลาให้กลุ่ม+DM, คั่นวันนี้/เก่ากว่า, ยุบ header ซ้ำซ้อน:**
+- แต่ละแถวกลุ่ม/DM โชว์เวลาแบบ `formatGroupTime()` ใหม่ใน `utils/helpers.js` (วันนี้ = `HH:mm`, เก่ากว่า =
+  `d MMM yy` ภาษาไทยแบบย่อ เช่น "15 ก.ค. 26")
+- เส้นประคั่นระหว่างกลุ่ม/DM ที่ใช้งาน "วันนี้" กับ "เก่ากว่า" (`.group-list-divider`) — โชว์เฉพาะตอนเรียง
+  ตามเวลา (name sort ไม่มีเส้นคั่นเพราะไม่ต่อเนื่องตามวันที่)
+- ลบแถว "กลุ่ม 8" ที่ซ้ำซ้อนกันสองที่ (ตัวบนไม่มี chevron ยุบ/กาง vs ตัวล่างมี) เหลือแค่ตัวล่างตัวเดียว
+- ย้ายปุ่มปักหมุด (📌) จาก header เดิมไปอยู่แถวเดียวกับ "ทั้งหมด"/"+" (label-tabs-bar) ลด header เดิมทิ้ง
+  ทั้งก้อน (`.sidebar-header`/`.sidebar-brand` CSS ตายแล้ว ลบออก) ทำให้ header สูงน้อยลงเห็นได้ชัด
+
+**🆕 SummarySidebar (ขวา, "ตั้งค่าการสรุป AI") — รีดีไซน์ทั้งหมด + เก็บของเก่าไว้ rollback ด่วน:**
+- แยกเป็นการ์ด 3 ใบชัดเจน (ช่วงเวลา/ขอบเขต/โมเดล AI) แทนเรียงยาวรวด — คลาส CSS ใหม่ทั้งหมด (`.ai-*`) ไม่
+  ยืม `.input-label`/`.date-dropdown` เดิมจาก `Sidebar.css` อีกต่อไป (แยกขาดจากกันสมบูรณ์)
+- **เวอร์ชันก่อนรีดีไซน์แช่แข็งไว้ที่ `frontend/src/components/SummarySidebarLegacy/`** (component +
+  CSS สำเนา) — ถ้าดีไซน์ใหม่มีปัญหา สลับ import กลับใน `App.jsx` บรรทัดเดียวจบ (มีคอมเมนต์บอกวิธีในไฟล์)
+- ตัวเลือกวันที่ปรับ default เป็น "ทั้งหมด (7 วัน)" แทน "วันนี้" + format วันที่สั้นลง (`formatDateOption
+  Label()` — วันนี้/เมื่อวานมีวงเล็บกำกับ, วันอื่นโชว์ `17 ก.ค. 26` เดี่ยวๆ ไม่ซ้ำซ้อน)
+
+**🆕 ระบบ AI Provider รวมเป็นหนึ่งเดียว (Groq/Gemini built-in + custom เช่น OpenRouter) — งานใหญ่สุดของ
+session นี้:**
+- **โมเดลใหม่ `AiProvider`** (`backend/models/AiProvider.js`): `name`, `baseUrl`, `apiKey`, `model`,
+  `priority` (int, เลขน้อย = ลองก่อน), `isBuiltIn` (bool, true เฉพาะ Groq/Gemini ที่ seed มาจาก .env)
+- **`backend/services/seedAiProviders.js`** — seed Groq + Gemini จาก `GROQ_API_KEY`/`GEMINI_API_KEY` ใน
+  .env เป็นแถวใน `AiProviders` ตอน server start ครั้งแรกเท่านั้น (เช็คด้วย `isBuiltIn`, ไม่ seed ซ้ำแม้
+  user จะลบทิ้งไปแล้ว) — Gemini seed ไว้ **ลำดับท้ายสุดเสมอโดยตั้งใจ** (โควต้า=0 ที่รู้อยู่แล้ว)
+- **ค้นพบสำคัญ**: Gemini มี OpenAI-compatible endpoint จริง (`https://generativelanguage.googleapis.com/
+  v1beta/openai`, `Authorization: Bearer <key>` แบบเดียวกับ OpenRouter/Groq) — แปลว่ารวม Groq+Gemini+
+  custom เป็นระบบเดียวกันได้จริง ไม่ต้องมี `callGroq`/`callGemini` แยกสำหรับงานสรุปแชทอีกต่อไป (ลบ
+  `callGemini` เดิมทิ้งแล้ว — ยังเหลือ `callGeminiVision`/`callGroqVision` ไว้เพราะ OCR ยังไม่ join ระบบนี้)
+- **`callProviderChain()`** ใน `aiService.js` — ไล่เรียก provider ทีละตัวตามลำดับ array ที่ส่งมาจนกว่าจะ
+  สำเร็จ (คืนค่าจากตัวแรกที่ผ่าน, ใส่ "(fallback)" ต่อท้ายชื่อโมเดลถ้าไม่ใช่ตัวแรก)
+- **`resolveProviderChain(selector)`** ใน `botCommandService.js` (import ได้จากที่นี่) — แปลง `'auto'`
+  (= ทุก provider เรียงตาม priority) หรือเลข id เจาะจง (= บังคับตัวเดียว ไม่ fallback) เป็น array config
+  พร้อม apiKey จริง — รองรับ string เก่า `'groq'`/`'gemini'` ด้วย (หา built-in ที่ชื่อขึ้นต้นตรงกัน) เผื่อ
+  `SummarySidebarLegacy` ที่ยังส่งค่าแบบเดิมมา ไม่ให้ rollback path พังไปด้วย
+- **`routes/aiProviders.js`** — CRUD เต็มรูปแบบทุก provider (built-in ก็แก้ไข/ลบ/ทดสอบได้เหมือน custom
+  ทุกอย่าง ไม่มีข้อยกเว้นพิเศษอีกแล้ว): GET (ทุก role), POST/PUT/DELETE/PATCH `/priority` (superuser
+  เท่านั้น) — PATCH `/priority` ใช้ **"สลับตำแหน่งตรงๆ"** กับตัวที่ถือเลขนั้นอยู่เดิม (ยืนยันกับ user
+  แล้วด้วย preview ตัวอย่างก่อนเขียนโค้ด — ไม่ใช่ insert-and-shift แบบ ranking list ทั่วไป) ตัวอื่นในลิสต์
+  ไม่กระทบเลย, DELETE ปิดช่องว่างลำดับที่เหลือให้เป็น 1..N ต่อเนื่องเสมอ
+- **`routes/messages.js`** (`/summarize-day`, `/ask`) + **`botCommandService.js`** (คำสั่ง "สรุปเลย" ผ่าน
+  LINE) — เปลี่ยนมาใช้ `resolveProviderChain()` เดียวกันหมด, `askQuestion()` รับ `fallbackChain` เพิ่ม
+  (compound-mini ยังเป็นตัวลองก่อนเสมอเพราะมี web search ในตัวไม่มีใครแทนได้ แต่ fallback ตอน compound-
+  mini พังเปลี่ยนจาก hardcode `llama-3.3-70b-versatile` ไปไล่ตาม priority-chain แทน)
+- **frontend `SummarySidebar.jsx`**: ลบ `BUILTIN_AI_PROVIDERS` hardcode array ทิ้ง — dropdown "AI ที่ใช้
+  สรุป" เหลือแค่ 2 แบบ: `auto` (🎯 อัตโนมัติตามลำดับ) หรือเจาะจง id ตัวใดตัวหนึ่ง — รายการจัดการ provider
+  มีช่อง `<input type="number">` พิมพ์เลขลำดับใหม่ได้ตรงๆ (key คือ `${id}-${priority}` บังคับ remount ให้
+  defaultValue sync กับ state ภายนอกเวลาถูกสลับจากแถวอื่น) + ปุ่ม ▶ ทดสอบ/✎ แก้ไข/× ลบ ครบทุกแถวเหมือนกัน
+- **`sanitizeCredential()`** ใหม่ใน `aiService.js` — ตัด `\r\n\t` และอักขระควบคุมอื่นๆ ออกจาก
+  name/baseUrl/apiKey/model ทั้งตอนบันทึกและตอนเรียกจริง (`.trim()` เดิมตัดได้แค่หัว-ท้าย ไม่ตัดตรงกลาง)
+
+**🆕 AdminPanel — รวม "กลุ่มตรวจสอบการโอนเงิน" + "กลุ่มสรุปบิลซื้อของ" เป็นการ์ดเดียว ค้นหาได้ ขยายฟีเจอร์
+ในอนาคตง่าย:**
+- Backend: รวม `PATCH /:groupId/payment-verify` + `/receipt-summary` (2 endpoint) เป็น
+  `PATCH /:groupId/flags` endpoint เดียว รับ `{ field, value }` เช็คกับ whitelist
+  `ALLOWED_GROUP_FLAG_FIELDS` ใน `routes/groups.js` กัน mass-assignment ไปคอลัมน์อื่นของ `Group`
+- Frontend: การ์ด "ตั้งค่าเฉพาะกลุ่ม" เดียว มีช่องค้นหาชื่อกลุ่ม + แต่ละแถวโชว์ avatar+ชื่อ (สไตล์เดียวกับ
+  chat sidebar) พร้อม "ชิป" เปิด/ปิดต่อท้ายหลายอันได้ตามจำนวนใน `GROUP_FLAGS` config array (ตอนนี้มี 2:
+  ตรวจสอบการโอนเงิน/สรุปบิลซื้อของ) — เพิ่มฟีเจอร์ใหม่ในอนาคต = เพิ่ม object ใน `GROUP_FLAGS` (frontend)
+  + เพิ่มชื่อ field ใน whitelist (backend) เท่านั้น ไม่ต้องสร้าง endpoint/state ใหม่ทุกครั้ง
+
+**บั๊กที่เจอ+แก้ระหว่างทดสอบจริง:**
+1. **เบราว์เซอร์ autofill รหัสผ่านทับฟอร์มเพิ่ม provider** — ช่อง text (Base URL) อยู่ติดกับช่อง
+   `type="password"` (API Key) พอดี ทำให้ Chrome เข้าใจผิดว่าเป็นฟอร์ม login แล้วเติม username/password
+   ที่เคยจำไว้ทับให้เอง (ไม่ใช่ state ค้างในแอป) — แก้ด้วย `autoComplete="new-password"` ที่ช่อง API Key +
+   `autoComplete="off"` กับ `name` เฉพาะทุกช่องที่เหลือ
+2. **`Invalid character in header content`** — copy-paste API key จากบางแหล่งติดอักขระควบคุม (newline/
+   tab) ที่มองไม่เห็นมาด้วย หลุดเข้า header `Authorization` แล้ว Node ปฏิเสธทันที — แก้ด้วย
+   `sanitizeCredential()` (ดูด้านบน)
+3. **`finish_reason: "length"` ทำให้ทดสอบ connection fail ทั้งที่จริงเชื่อมต่อสำเร็จ** — reasoning model
+   (เช่น `z-ai/glm-5.2`) ใช้ token ไปกับการ "คิด" ภายในก่อนตอบจริง ถ้า `max_tokens` น้อยไป (เดิม 20) อาจ
+   หมดโควตาก่อนได้ตอบ — เพิ่มเป็น 300 + แยกข้อความ error ให้ชัดว่า "เชื่อมต่อสำเร็จแค่ token ไม่พอ" ไม่ใช่
+   ปัญหาการเชื่อมต่อจริง
+
+**หลักการสำคัญที่ควรจำ**: ระบบ priority-chain นี้ตอนนี้ครอบคลุมแค่ "สรุปแชท" + "AI ผู้ช่วย" (ทั้งคู่เป็น
+text-only ล้วนๆ) **ยังไม่ครอบคลุม OCR** (ตรวจสอบการโอนเงิน/สรุปบิลซื้อของ) เพราะต้องใช้โมเดลที่ "มีตา"
+(vision) เท่านั้น ไม่ใช่ทุกตัวใน chain อ่านรูปได้ — ถ้าจะทำ Phase 2 ต้องเพิ่ม capability tag (เช่น
+`supportsVision: true`) ต่อ provider แล้วกรอง chain เฉพาะ subset ที่ vision-capable ก่อนถึงจะปลอดภัย
+(ตกลงกับ user แล้วว่าเป็นงานเฟสถัดไป ไม่ทำรวมใน session นี้)
+
+**ไฟล์ที่แก้/สร้างรอบนี้ (backend)**: `models/AiProvider.js` (ใหม่, +priority +isBuiltIn),
+`models/index.js`, `services/seedAiProviders.js` (ใหม่), `services/aiService.js` (ลบ `callGemini` เดิม,
++`callProviderChain`, +`sanitizeCredential`, +`extractChatReply`, `askQuestion` รับ `fallbackChain`),
+`services/botCommandService.js` (+`resolveProviderChain`), `routes/aiProviders.js` (ใหม่, CRUD+priority),
+`routes/messages.js` (`/summarize-day`, `/ask` ใช้ chain), `routes/groups.js` (รวม endpoint เป็น
+`/flags`), `server.js` (+seed call), `app.js` (mount `/api/ai-providers`)
+**ไฟล์ที่แก้/สร้างรอบนี้ (frontend)**: `api/aiProviders.js` (ใหม่), `api/groupFlags.js` (ใหม่),
+`api/paymentVerification.js` (ลบ `toggleGroupPaymentVerify` ที่ไม่ใช้แล้ว), `api/receiptSummary.js`
+(ลบทั้งไฟล์ — ไม่มีอะไรเรียกใช้แล้ว), `components/SummarySidebar/` (รีดีไซน์ทั้งคู่ jsx+css),
+`components/SummarySidebarLegacy/` (ใหม่, สำเนาแช่แข็ง), `components/Sidebar/` (วันที่/เวลา, เส้นคั่น,
+ยุบ header), `pages/AdminPanel.jsx`+`.css` (รวมการ์ด group flags), `utils/helpers.js`
+(+`formatGroupTime`, +`formatDateShort`, +`formatDateOptionLabel`, +`isToday`), `App.jsx`
+(default `aiProvider='auto'`, ลบ `today`/`format` ที่ไม่ใช้แล้ว)
 
 ### ✅ Session 14 — ค้นหาครอบคลุมข้อความ + ค้นหาDB + กระโดดไปข้อความ/ห้องแชทจริง + ไฮไลต์คำค้น (11 ก.ค. 69)
 
@@ -463,24 +564,30 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
 
 ### 🟡 ถัดไป
 
-1. **ยืนยันผลทดสอบฟีเจอร์กระโดดไปข้อความ/ห้องแชทจริง (session 14)** — user เจอบั๊ก 2 รอบระหว่างทดสอบ
-   จริง (highlight จางเร็ว, ไม่เลื่อนไปเป้าหมายตอนเข้าห้องแชทตรง) แก้ไปแล้วด้วย `scrollToAndHighlight
-   Message()` แบบลองซ้ำ แต่**ยังไม่ได้รับการยืนยันจาก user ว่าผ่านจริงหลังแก้รอบสุดท้าย** — ถามผลตอน
-   session หน้าก่อนถือว่าเสร็จ
-2. **ทดสอบ AI ผู้ช่วยเรื่องข้อมูลเรียลไทม์เพิ่ม** — session 14 เจอ error 413 (payload too large) จาก
-   `compound-mini` บ่อยพอๆ กับ 429 (เจอครั้งแรก) แก้ prompt fallback ไม่ให้หลอกข้อมูลแล้ว แต่ยังไม่ได้
-   เช็คว่าทำไม `compound-mini` ถึง error 413 บ่อย (payload สั้นมาก ไม่ควรเกิน limit ปกติ)
-3. **จับตา rate limit ของ `groq/compound-mini`** — ต่ำกว่าโมเดลปกติเยอะ (ต้องค้นเว็บจริงทุกครั้ง) ถ้าใช้
-   งานจริงบ่อยอาจโดน 429/413 ถี่ — ยังไม่ได้เช็ค tier/quota จริงใน Groq Console
-4. **ทดสอบฟีเจอร์ตรวจสอบการโอนเงินกับรูปจริงผ่าน LINE** — เปิดธง `isPaymentVerifyGroup` ให้กลุ่มทดสอบก่อน แล้วลองส่ง 2 รูปจริง (ยังทดสอบแค่ logic/DB/API ผ่าน HTTP เท่านั้น ยังไม่เคยทดสอบผ่าน LINE จริง)
-5. **แก้ Gemini API billing** — เข้า https://aistudio.google.com/apikey เช็ค project ที่สร้าง key แล้วผูก billing account ให้ปลดล็อก free tier (`askQuestion` เลิกพึ่ง Gemini ไปแล้ว แต่ฟีเจอร์อื่น เช่น อ่านสลิป/บิล ยังใช้ Gemini เป็นหลักอยู่)
-6. **SMTP สำหรับฟีเจอร์ลืมรหัสผ่าน** — ยังไม่ได้ตั้งค่า รอ Gmail + App Password จากคุณ (พักไว้หลายรอบแล้ว)
-7. **tax-ocr Drive cleanup** — ลบ CLAUDE.md 4 อัน (keep `1BUdruo8dnxxXibPUNCegEoJiraxujWAo`) + ลบ .env 2 อัน (keep `1e2288av9H0RRX2yjgMyhxXCIIfAWGDha`) รอ user confirm
-8. **root misplaced files** — `gdrive.md` + `start.md` ในรากของ Drive ควรย้ายเข้า `_claude-skills` หรือปล่อยไว้ รอ user confirm
-9. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`
-10. **Popup กระโดดไปข้อความ ไม่มี forward-pagination** — ถ้าเลื่อนดูเกิน 25 ข้อความ "หลังจาก" เป้าหมาย
-    จะไม่มีปุ่มโหลดเพิ่มถัดไป ต้องออกจากห้องแล้วเข้าใหม่แบบปกติถ้าอยากดู "ล่าสุด" จริงๆ — ยังไม่ทำ ไม่ใช่
-    เรื่องเร่งด่วน
+1. **⚠️ commit + push งาน session 15** — ยังไม่ได้ commit เลยสักบรรทัด (ดูรายละเอียดใน session 15 ด้านบน)
+   แนะนำแตกเป็นหลาย commit ตามหัวข้อ (Sidebar UI / SummarySidebar redesign / AI provider system /
+   AdminPanel group flags) ไม่ใช่ commit เดียวรวด
+2. **⚠️ ทดสอบระบบ priority-chain ผ่าน UI จริงในเบราว์เซอร์** — session 15 ทดสอบผ่าน Node script เรียก
+   backend ตรงๆ เท่านั้น (resolveProviderChain, callProviderChain, priority swap) **ยังไม่เคยคลิกทดสอบ
+   ผ่านหน้าเว็บจริงเลย** — ต้องเช็ค: dropdown "auto" ทำงานถูกไหม, พิมพ์เลขจัดลำดับใน UI ได้จริงไหม, ปุ่ม
+   ▶ ทดสอบ/✎ แก้ไข/× ลบ ของ provider ที่เป็น built-in (Groq/Gemini) ทำงานปกติไหม
+3. **ทดสอบฟีเจอร์ตรวจสอบการโอนเงินกับรูปจริงผ่าน LINE** — ค้างมาหลาย session แล้ว ยังไม่เคยทดสอบผ่าน LINE
+   จริงสักครั้ง (เปิดธงผ่าน AdminPanel การ์ด "ตั้งค่าเฉพาะกลุ่ม" ที่ทำใหม่ session นี้ได้แล้ว)
+4. **Phase 2: ให้ priority-chain ครอบคลุม OCR ด้วย** — ตอนนี้ตรวจสอบการโอนเงิน/สรุปบิลซื้อของ ยังใช้ระบบ
+   เก่า (Gemini vision → Groq vision fallback) แยกต่างหาก ไม่ join ระบบใหม่เพราะต้องมี capability tag
+   (vision-capable) กรอง chain ก่อน — ดูรายละเอียดในหัวข้อ "หลักการสำคัญที่ควรจำ" ของ session 15
+5. **ยืนยันผลทดสอบฟีเจอร์กระโดดไปข้อความ/ห้องแชทจริง (session 14)** — ยังไม่ได้รับการยืนยันจาก user ว่า
+   ผ่านจริงหลังแก้ด้วย `scrollToAndHighlightMessage()` แบบลองซ้ำ
+6. **แก้ Gemini API billing** — เข้า https://aistudio.google.com/apikey เช็ค project ที่สร้าง key แล้วผูก
+   billing account ให้ปลดล็อก free tier — **ลดความเร่งด่วนลงแล้ว** เพราะงานสรุปแชท/AI ผู้ช่วยไม่พึ่ง
+   Gemini เป็นตัวหลักอีกต่อไป (อยู่ท้าย priority-chain เฉยๆ) แต่ OCR (อ่านสลิป/บิล) ยังใช้ Gemini เป็นหลัก
+7. **จับตา rate limit ของ `groq/compound-mini`** — เจอ error 413/429 บ่อยจาก session 14 ยังไม่ได้เช็ค
+   tier/quota จริงใน Groq Console
+8. **SMTP สำหรับฟีเจอร์ลืมรหัสผ่าน** — ยังไม่ได้ตั้งค่า รอ Gmail + App Password จากคุณ (พักไว้หลายรอบแล้ว)
+9. **tax-ocr Drive cleanup** — ลบ CLAUDE.md 4 อัน (keep `1BUdruo8dnxxXibPUNCegEoJiraxujWAo`) + ลบ .env 2 อัน (keep `1e2288av9H0RRX2yjgMyhxXCIIfAWGDha`) รอ user confirm
+10. **root misplaced files** — `gdrive.md` + `start.md` ในรากของ Drive ควรย้ายเข้า `_claude-skills` หรือปล่อยไว้ รอ user confirm
+11. **ถ้าต้อง refresh token ในอนาคต** → ใช้ขั้นตอนใน session 4 + `--force-recreate` ไม่ใช่ `restart`
+12. **Popup กระโดดไปข้อความ ไม่มี forward-pagination** — ยังไม่ทำ ไม่ใช่เรื่องเร่งด่วน
 
 ### 🔑 docker compose restart ไม่โหลด .env ใหม่
 
@@ -575,3 +682,40 @@ ssh root@168.144.137.42 "docker compose -f /home/worker/lineoa-dev/docker-compos
 > ที่เพิ่งจะถูก mount จากการเปลี่ยน state ใหญ่ๆ (สลับกลุ่ม/หน้า) ให้ใช้ retry pattern (เช่น
 > `scrollToAndHighlightMessage()` ใน `utils/helpers.js` ที่ลองซ้ำทุก 50ms นานสูงสุด 2 วินาที) แทนการหา
 > ครั้งเดียวแล้วยอมแพ้เลย
+
+### 🔑 เบราว์เซอร์ autofill รหัสผ่านทับฟอร์มที่ไม่ใช่ login form
+
+> ถ้าฟอร์มมีช่อง text ธรรมดาอยู่ **ติดกันทันที** ก่อนช่อง `type="password"` (เช่นฟอร์มเพิ่ม API key ที่มี
+> Base URL แล้วตามด้วย API Key) Chrome/เบราว์เซอร์อื่นจะเข้าใจผิดว่าเป็นฟอร์ม login แล้วเติม
+> username/password ที่เคยจำไว้ทับให้เองหลัง render เสี้ยววินาที — **ไม่ใช่ state ค้างในแอป** อาการคือ
+> เห็นค่าที่ไม่เกี่ยวข้อง (เช่นชื่อบัญชีผู้ใช้) โผล่มาในช่องที่เพิ่งเคลียร์ไปแล้ว
+> **กฎ**: ใส่ `autoComplete="new-password"` ที่ช่อง password เสมอ + `autoComplete="off"` กับ `name`
+> เฉพาะ (ไม่ใช่ default) ให้ทุกช่อง text ที่เหลือในฟอร์มเดียวกัน กันเบราว์เซอร์จับคู่ผิด
+
+### 🔑 `.trim()` ตัดได้แค่หัว-ท้าย ไม่ตัดอักขระควบคุมตรงกลาง
+
+> ถ้า user copy-paste ค่าที่จะเอาไปใส่ header HTTP (เช่น API key ใส่ `Authorization: Bearer <key>`) จาก
+> บางแหล่ง (PDF, note app บางตัว) อาจติดอักขระควบคุม (newline/tab) ที่มองไม่เห็นมาด้วย ถ้าอยู่ตรงกลาง
+> string `.trim()` จะไม่ตัดออก แล้ว Node จะโยน `Invalid character in header content` ทันทีตอนสร้าง
+> request จริง — ไม่ใช่ปัญหาตัวคีย์ผิด แค่มีขยะปนมา
+> **กฎ**: มี helper แยกต่างหาก (`sanitizeCredential()` ใน `aiService.js`) ที่ regex ตัดอักขระควบคุมทุกจุด
+> (`/[\r\n\t\x00-\x1F\x7F]/g`) ไม่ใช่แค่ `.trim()` — ใช้ทั้งตอนบันทึกลง DB และตอนเรียกใช้จริงทุกครั้ง
+
+### 🔑 Gemini มี OpenAI-compatible endpoint จริง — ไม่ต้องเขียน adapter แยก
+
+> Google เปิด endpoint compat มาตรฐาน OpenAI ให้ Gemini แล้ว: `https://generativelanguage.googleapis.com/
+> v1beta/openai/chat/completions` ใช้ `Authorization: Bearer <GEMINI_API_KEY>` เหมือน Groq/OpenRouter
+> เป๊ะ (ก่อนหน้านี้เข้าใจผิดว่า Gemini ต้องมี adapter แยกเพราะ REST API ดั้งเดิมของ Google ใช้ query param
+> `?key=` + body shape `contents`/`parts` คนละแบบกับ OpenAI) — ถ้าจะรวม provider หลายเจ้าเป็นระบบเดียว
+> เช็คก่อนเสมอว่าเจ้านั้นมี OpenAI-compat layer หรือไม่ (ส่วนใหญ่เจ้าใหญ่ๆ มีแล้ว) ก่อนจะแยกเขียน adapter
+> เฉพาะ — ประหยัดโค้ดได้เยอะ
+
+### 🔑 Reorder ด้วยการพิมพ์เลขในช่อง — ต้องถามพฤติกรรมที่แน่ชัดก่อนเขียนโค้ด มีได้หลายแบบ
+
+> ฟีเจอร์ "จัดลำดับความสำคัญ" ที่ให้ user พิมพ์เลขใหม่ในช่องแทนการลาก มีพฤติกรรมที่เป็นไปได้อย่างน้อย 3
+> แบบตอนเลขชนกัน: (1) สลับตำแหน่งตรงๆ กับตัวที่ถือเลขนั้นอยู่เดิม ตัวอื่นไม่กระทบ (2) เลื่อนตัวที่อยู่
+> ระหว่างกลางทั้งหมดลง 1 ตำแหน่งเหมือน ranking list ทั่วไป (3) ตัวที่โดนแทนที่ถูกไล่ไปเป็นลำดับสุดท้าย —
+> ทั้ง 3 แบบให้ผลลัพธ์สุดท้ายต่างกัน ถ้าเดาเอาเองแล้วเขียนโค้ดไปเลยเสี่ยงผิดสเปคและต้องรื้อใหม่
+> **กฎ**: ใช้ preview ตัวอย่าง before/after เป็นรูปธรรม (เช่น "ก่อน: 1,2,3,4 → หลัง: ???") ถามให้ user
+> เลือกพฤติกรรมที่ต้องการชัดเจนก่อนเขียนโค้ดจริง — โปรเจกต์นี้เลือกแบบ (1) สลับตรงๆ เพราะง่ายสุดและ
+> คาดเดาผลลัพธ์ได้ตรงไปตรงมาที่สุด
