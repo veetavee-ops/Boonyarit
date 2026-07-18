@@ -29,6 +29,7 @@ function serialize(p) {
     apiKeyMasked: maskKey(p.apiKey),
     priority: p.priority,
     isBuiltIn: p.isBuiltIn,
+    supportsVision: p.supportsVision,
     createdAt: p.createdAt,
   };
 }
@@ -48,7 +49,7 @@ router.get('/', async (req, res) => {
 // body: { name, baseUrl, apiKey, model }
 router.post('/', requireSuperuser, async (req, res) => {
   try {
-    const { name, baseUrl, apiKey, model } = req.body;
+    const { name, baseUrl, apiKey, model, supportsVision } = req.body;
     if (!name?.trim() || !baseUrl?.trim() || !apiKey?.trim() || !model?.trim()) {
       return res.status(400).json({ error: 'ต้องระบุ ชื่อ, Base URL, API Key และชื่อ Model ให้ครบ' });
     }
@@ -59,6 +60,7 @@ router.post('/', requireSuperuser, async (req, res) => {
       apiKey: sanitizeCredential(apiKey),
       model: sanitizeCredential(model),
       priority: count + 1,
+      supportsVision: !!supportsVision,
       createdBy: req.admin.id,
     });
     res.json(serialize(provider));
@@ -75,7 +77,7 @@ router.put('/:id', requireSuperuser, async (req, res) => {
     const provider = await AiProvider.findByPk(req.params.id);
     if (!provider) return res.status(404).json({ error: 'ไม่พบ provider นี้' });
 
-    const { name, baseUrl, apiKey, model } = req.body;
+    const { name, baseUrl, apiKey, model, supportsVision } = req.body;
     if (!name?.trim() || !baseUrl?.trim() || !model?.trim()) {
       return res.status(400).json({ error: 'ต้องระบุ ชื่อ, Base URL และชื่อ Model ให้ครบ' });
     }
@@ -83,6 +85,7 @@ router.put('/:id', requireSuperuser, async (req, res) => {
     provider.name = sanitizeCredential(name);
     provider.baseUrl = sanitizeCredential(baseUrl).replace(/\/+$/, '');
     provider.model = sanitizeCredential(model);
+    provider.supportsVision = !!supportsVision;
     if (apiKey?.trim()) provider.apiKey = sanitizeCredential(apiKey);
 
     await provider.save();

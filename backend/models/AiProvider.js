@@ -22,6 +22,9 @@ const AiProvider = sequelize.define('AiProvider', {
   isBuiltIn: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   // admin คนที่เพิ่ม provider นี้ (เก็บไว้อ้างอิงเฉยๆ ไม่ได้ใช้ผูกสิทธิ์)
   createdBy: { type: DataTypes.UUID, allowNull: true },
+  // true = provider นี้อ่านรูปได้ (vision-capable) — ใช้กรอง chain สำหรับงาน OCR (สรุปบิล/
+  // ตรวจสอบการโอนเงิน) แยกจาก chain สรุปแชท/AI ผู้ช่วยที่ใช้ทุกตัวได้ ไม่ต้องเป็น vision
+  supportsVision: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
 }, { timestamps: true });
 
 module.exports = AiProvider;

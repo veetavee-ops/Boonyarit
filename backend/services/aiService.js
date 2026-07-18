@@ -4,7 +4,6 @@ const axios = require('axios');
 // ── Groq ────────────────────────────────────────────────────────────────────
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
-const GROQ_VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct'; // ต้อง vision-capable — เช็ค model ล่าสุดที่ console.groq.com ถ้า error "model not found"
 const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions';
 
 // ── Gemini ──────────────────────────────────────────────────────────────────
@@ -359,9 +358,15 @@ async function callGeminiVision(prompt, imageBuffers) {
   }
 }
 
-// ── Vision: เรียก Groq อ่านรูป (fallback) ────────────────────────────────────
-async function callGroqVision(prompt, imageBuffers) {
-  if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY ยังไม่ได้ตั้งค่าใน .env');
+// ── Vision: เรียก provider แบบ OpenAI-compatible ที่ user เพิ่มเอง+ติ๊ก "รองรับรูปภาพ" ──
+// โครงเดียวกับ callOpenAiCompatible แต่ content เป็น multimodal (text + image_url) — ใช้เป็น
+// fallback แทน Groq vision เดิม (โมเดล meta-llama/llama-4-scout-17b-16e-instruct ถูกถอดออกจาก
+// Groq ไปแล้วจริงๆ ไม่ใช่แค่เปลี่ยนชื่อ — เช็คจาก /v1/models ตรงๆ พบว่าบัญชีนี้ไม่มีโมเดล vision เหลือ)
+async function callOpenAiCompatibleVision(prompt, { baseUrl, apiKey, model, name }, imageBuffers) {
+  const cleanUrl = sanitizeCredential(baseUrl);
+  const cleanKey = sanitizeCredential(apiKey);
+  const cleanModel = sanitizeCredential(model);
+  const url = cleanUrl.replace(/\/+$/, '') + '/chat/completions';
 
   const content = [
     { type: 'text', text: prompt },
@@ -372,9 +377,9 @@ async function callGroqVision(prompt, imageBuffers) {
   ];
 
   const response = await axios.post(
-    GROQ_API,
+    url,
     {
-      model: GROQ_VISION_MODEL,
+      model: cleanModel,
       messages: [{ role: 'user', content }],
       max_tokens: 4096,
       temperature: 0.1,
@@ -382,15 +387,36 @@ async function callGroqVision(prompt, imageBuffers) {
     {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
+        'Authorization': `Bearer ${cleanKey}`,
       },
     }
   );
 
   return {
-    text: response.data.choices[0].message.content,
-    modelLabel: 'Llama 4 Scout (Groq vision)',
+    text: extractChatReply(response.data),
+    modelLabel: name || model,
   };
+}
+
+// ── ไล่เรียก provider vision ทีละตัวตามลำดับจนกว่าจะสำเร็จ (เหมือน callProviderChain แต่อ่านรูป) ──
+async function callProviderChainVision(prompt, providers, imageBuffers) {
+  if (!providers || providers.length === 0) {
+    throw new Error('ยังไม่มี AI provider ที่รองรับรูปภาพ — เพิ่ม provider แล้วติ๊ก "รองรับรูปภาพ" ก่อน');
+  }
+  let lastError;
+  for (let i = 0; i < providers.length; i++) {
+    try {
+      const result = await callOpenAiCompatibleVision(prompt, providers[i], imageBuffers);
+      if (i > 0) result.modelLabel += ' (fallback)';
+      return result;
+    } catch (err) {
+      lastError = err;
+      const msg = err.response?.data?.error?.message || err.message;
+      const nextNote = i < providers.length - 1 ? ` — ลองตัวถัดไป (${providers[i + 1].name})` : '';
+      console.warn(`⚠️ [vision] ${providers[i].name} failed: ${msg}${nextNote}`);
+    }
+  }
+  throw lastError;
 }
 
 // ── Helper: ตัด markdown code fence ที่โมเดลชอบแถมมาออกก่อน JSON.parse ──────
@@ -401,7 +427,7 @@ function parseJsonFromModel(text) {
 
 // ── Vision: อ่านรูป "รายงานตั้งเบิก" + "สกรีนธนาคาร" พร้อมกัน แล้วแกะเป็น JSON ──
 // ไม่ต้องพึ่งลำดับการส่ง (ใครมาก่อน) — ให้ AI classify ประเภทของแต่ละรูปเองในตัว prompt เดียวกัน
-async function extractPaymentDocuments(imageBufferA, imageBufferB) {
+async function extractPaymentDocuments(imageBufferA, imageBufferB, visionChain = []) {
   const prompt = `คุณเป็นผู้ช่วยตรวจสอบเอกสารการเงิน จะได้รับรูป 2 รูป เรียกว่า "ภาพ A" (รูปแรก) และ "ภาพ B" (รูปสอง) ไม่เรียงลำดับตายตัวว่าใบไหนคือรายงานหรือสกรีนธนาคาร ซึ่งเป็น:
 1. "รายงานตั้งเบิกเงิน" — ตารางรายการที่ต้องจ่าย/โอน มีคอลัมน์ ผู้รับเงิน, เลขบัญชี/ธนาคาร, ยอดรวม, รหัสงาน
 2. "สกรีนช็อตธนาคาร" (เช่น K BIZ) — ประวัติการโอนเงินจริง มีรายการ โอนเงิน/รับโอนเงิน พร้อมยอดและยอดคงเหลือในบัญชี
@@ -430,9 +456,9 @@ async function extractPaymentDocuments(imageBufferA, imageBufferB) {
   try {
     result = await callGeminiVision(prompt, [imageBufferA, imageBufferB]);
   } catch (primaryError) {
-    console.warn(`⚠️ Gemini vision failed: ${primaryError.message} — ลองใช้ Groq vision แทน`);
-    result = await callGroqVision(prompt, [imageBufferA, imageBufferB]);
-    result.modelLabel += ' (fallback)';
+    console.warn(`⚠️ Gemini vision failed: ${primaryError.message} — ลองใช้ provider ที่รองรับรูปภาพแทน`);
+    result = await callProviderChainVision(prompt, visionChain, [imageBufferA, imageBufferB]);
+    if (!result.modelLabel.includes('(fallback)')) result.modelLabel += ' (fallback)';
   }
 
   console.log(`✅ Payment documents extracted by ${result.modelLabel}`);
@@ -563,7 +589,7 @@ async function askQuestion(question, fallbackChain = []) {
 
 // ── Vision: อ่านรูปใบเสร็จ/บิลซื้อของ (1-10 รูป ของใบเดียวกัน) แล้วแกะเป็น JSON ──
 // รูปหลายใบถือเป็นบิลเดียวกันเสมอ (เช่นถ่ายแยกเพราะบิลยาว) — รวมรายการจากทุกรูปเป็นก้อนเดียว
-async function extractReceiptSummary(imageBuffers) {
+async function extractReceiptSummary(imageBuffers, visionChain = []) {
   const prompt = `คุณเป็นผู้ช่วยอ่านใบเสร็จ/บิลซื้อของ จะได้รับรูป ${imageBuffers.length} รูป ซึ่งเป็นใบเสร็จใบเดียวกัน (อาจถ่ายหลายรูปเพราะบิลยาวหรือมีหลายหน้า) ให้รวมข้อมูลจากทุกรูปเป็นรายการเดียว แล้วแกะข้อมูลออกมาเป็น JSON ตาม schema นี้เป๊ะๆ (ห้ามมีข้อความอื่นนอกจาก JSON, ห้ามใส่ markdown code fence):
 
 {
@@ -582,9 +608,9 @@ async function extractReceiptSummary(imageBuffers) {
   try {
     result = await callGeminiVision(prompt, imageBuffers);
   } catch (primaryError) {
-    console.warn(`⚠️ Gemini vision failed: ${primaryError.message} — ลองใช้ Groq vision แทน`);
-    result = await callGroqVision(prompt, imageBuffers);
-    result.modelLabel += ' (fallback)';
+    console.warn(`⚠️ Gemini vision failed: ${primaryError.message} — ลองใช้ provider ที่รองรับรูปภาพแทน`);
+    result = await callProviderChainVision(prompt, visionChain, imageBuffers);
+    if (!result.modelLabel.includes('(fallback)')) result.modelLabel += ' (fallback)';
   }
 
   console.log(`✅ Receipt summary extracted by ${result.modelLabel}`);
@@ -614,4 +640,5 @@ module.exports = {
   testAiProviderConnection,
   sanitizeCredential,
   callProviderChain,
+  callProviderChainVision,
 };

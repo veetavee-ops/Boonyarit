@@ -43,6 +43,7 @@ export default function SummarySidebar({
   const [newProviderBaseUrl, setNewProviderBaseUrl] = useState('');
   const [newProviderApiKey, setNewProviderApiKey] = useState('');
   const [newProviderModel, setNewProviderModel] = useState('');
+  const [newProviderSupportsVision, setNewProviderSupportsVision] = useState(false);
   const [providerSaving, setProviderSaving] = useState(false);
   const [providerError, setProviderError] = useState('');
   // ผลทดสอบการเชื่อมต่อของฟอร์มที่กำลังกรอกอยู่ — { status: 'testing'|'ok'|'error', message }
@@ -81,6 +82,7 @@ export default function SummarySidebar({
     setNewProviderBaseUrl('');
     setNewProviderApiKey('');
     setNewProviderModel('');
+    setNewProviderSupportsVision(false);
     setProviderError('');
     setDraftTestResult(null);
   };
@@ -99,6 +101,7 @@ export default function SummarySidebar({
     setNewProviderBaseUrl(p.baseUrl);
     setNewProviderApiKey('');
     setNewProviderModel(p.model);
+    setNewProviderSupportsVision(!!p.supportsVision);
     setProviderError('');
     setDraftTestResult(null);
     setShowProviderManager(true);
@@ -165,6 +168,7 @@ export default function SummarySidebar({
         name: newProviderName.trim(),
         baseUrl: newProviderBaseUrl.trim(),
         model: newProviderModel.trim(),
+        supportsVision: newProviderSupportsVision,
         ...(newProviderApiKey.trim() ? { apiKey: newProviderApiKey.trim() } : {}),
       };
       if (isEditing) {
@@ -561,6 +565,7 @@ export default function SummarySidebar({
                             onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
                           />
                           {p.isBuiltIn && <span className="ai-provider-builtin-badge" title="built-in จาก .env">⚡</span>}
+                          {p.supportsVision && <span className="ai-provider-vision-badge" title="รองรับรูปภาพ — ใช้เป็น fallback สำหรับ OCR สรุปบิล/ตรวจสอบการโอนเงิน">🖼️</span>}
                           <span className="ai-provider-list-name">{p.name}</span>
                           <span className="ai-provider-list-model">{p.model}</span>
                           <button
@@ -642,6 +647,16 @@ export default function SummarySidebar({
                   value={newProviderModel}
                   onChange={(e) => setNewProviderModel(e.target.value)}
                 />
+
+                <label className="ai-provider-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={newProviderSupportsVision}
+                    onChange={(e) => setNewProviderSupportsVision(e.target.checked)}
+                  />
+                  🖼️ รองรับรูปภาพ (ใช้เป็น fallback สำหรับ OCR สรุปบิล/ตรวจสอบการโอนเงิน)
+                </label>
+
                 <button
                   type="button"
                   className="ai-provider-test-btn"

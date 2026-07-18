@@ -24,6 +24,15 @@ async function resolveProviderChain(providerSelector) {
     return all.map((p) => ({ name: p.name, baseUrl: p.baseUrl, apiKey: p.apiKey, model: p.model }));
 }
 
+// ── chain สำหรับงาน OCR (สรุปบิล/ตรวจสอบการโอนเงิน) — กรองเฉพาะ provider ที่ user ติ๊ก
+// "รองรับรูปภาพ" ไว้ (supportsVision) เรียงตาม priority เดียวกับ chain สรุปแชท แต่เป็นคนละ subset กัน
+// ใช้เป็น fallback ต่อจาก Gemini native vision (callGeminiVision) ที่ยังลองก่อนเสมอ — ถ้าไม่มี provider
+// ที่ติ๊กไว้เลย คืน [] แล้วปล่อยให้ callProviderChainVision โยน error ที่อ่านง่ายเอง
+async function resolveVisionProviderChain() {
+    const providers = await AiProvider.findAll({ where: { supportsVision: true }, order: [['priority', 'ASC']] });
+    return providers.map((p) => ({ name: p.name, baseUrl: p.baseUrl, apiKey: p.apiKey, model: p.model }));
+}
+
 // คำสั่งค้นหาไฟล์ — ตั้งค่าได้เองในหน้า admin panel (ไม่ต้อง hardcode/แก้โค้ด)
 async function getSearchKeyword() {
     const s = await Setting.findByPk('search_keyword');
@@ -197,4 +206,5 @@ module.exports = {
     buildSearchReply,
     buildSummarizeReply,
     resolveProviderChain,
+    resolveVisionProviderChain,
 };

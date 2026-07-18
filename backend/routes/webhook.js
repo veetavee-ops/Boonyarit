@@ -10,7 +10,7 @@ const { uploadToGCS, buildGCSPath } = require('../services/gcsService');
 const { ensureGroupFolder, uploadFileToDrive } = require('../services/driveService');
 const { alertError } = require('../services/notifyService');
 const { extractPaymentDocuments, matchPaymentItems, extractReceiptSummary } = require('../services/aiService');
-const { getSearchKeyword, getSummarizeKeyword, escapeRegex, matchSummarizeCommand, buildSearchReply, buildSummarizeReply } = require('../services/botCommandService');
+const { getSearchKeyword, getSummarizeKeyword, escapeRegex, matchSummarizeCommand, buildSearchReply, buildSummarizeReply, resolveVisionProviderChain } = require('../services/botCommandService');
 const { syncLedgerForVerification } = require('../services/ledgerService');
 
 // ถ้าคนส่งข้อความนี้ผูก LINE ID กับบัญชี admin ไว้ (เมนู "ตั้งค่าบัญชี")
@@ -551,7 +551,8 @@ async function handlePaymentVerifyTimeout(groupKey) {
 
 async function processPaymentVerification(groupId, userId, images, replyToken, io) {
     try {
-        const extracted = await extractPaymentDocuments(images[0].buffer, images[1].buffer);
+        const visionChain = await resolveVisionProviderChain();
+        const extracted = await extractPaymentDocuments(images[0].buffer, images[1].buffer, visionChain);
         const { matchResults, overallStatus } = matchPaymentItems(extracted.reportItems, extracted.bankItems);
 
         // เก็บรูปแยกตามประเภทที่ AI classify ไว้ (imageAType/imageBType อ้างอิงลำดับ images[0]/images[1])
@@ -672,7 +673,8 @@ async function handleReceiptSummaryImage(event, sessionKey, message) {
 
 async function processReceiptSummary(images, replyToken) {
     try {
-        const extracted = await extractReceiptSummary(images.map(img => img.buffer));
+        const visionChain = await resolveVisionProviderChain();
+        const extracted = await extractReceiptSummary(images.map(img => img.buffer), visionChain);
 
         if (!extracted.storeName || extracted.items.length === 0) {
             await client.replyMessage(replyToken, {
