@@ -145,6 +145,7 @@
 }
 .ap-role-badge--admin { background: rgba(139,92,246,0.2); color: #6d28d9; }
 .ap-role-badge--user { background: rgba(249,115,22,0.15); color: var(--primary-color); }
+.ap-role-badge--superuser { background: rgba(220,38,38,0.15); color: #b91c1c; }
 
 .ap-group-count { font-size: 12px; color: var(--text-tertiary); flex-shrink: 0; }
 

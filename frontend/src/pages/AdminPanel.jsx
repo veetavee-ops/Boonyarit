@@ -216,7 +216,6 @@ export default function AdminPanel() {
     if (!confirm(`ยืนยันเปลี่ยน role เป็น "${role}"?`)) return;
     try {
       const updated = await updateUserRole(userId, role);
-      // เปลี่ยนเป็น superuser แล้วจะหายจากลิสต์ทันที (ลิสต์นี้ไม่แสดง superuser) — ตั้งใจ
       setUsers((prev) => prev.map((u) => (u.id === userId ? { ...u, role: updated.role } : u)));
       setSelectedUser((prev) => (prev?.id === userId ? { ...prev, role: updated.role } : prev));
     } catch (err) {
@@ -319,7 +318,7 @@ export default function AdminPanel() {
               <p className="ap-empty">ยังไม่มีผู้ใช้</p>
             ) : (
               <ul className="ap-user-list">
-                {users.filter((u) => u.role !== 'superuser').map((u) => (
+                {users.map((u) => (
                   <li
                     key={u.id}
                     className={`ap-user-item ${selectedUser?.id === u.id ? 'ap-user-item--active' : ''}`}
