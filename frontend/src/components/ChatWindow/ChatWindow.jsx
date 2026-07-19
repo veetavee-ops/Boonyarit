@@ -1091,7 +1091,7 @@ export default function ChatWindow({
                   className={`btn-ocr-type${ocrTestType === 'payment' ? ' active' : ''}`}
                   onClick={() => handleOcrTypeChange('payment')}
                 >
-                  💳 ตรวจสอบการโอน-ตั้งเบิก (2 รูป)
+                  💳 การโอน-ตั้งเบิก (2 รูป)
                 </button>
                 <button
                   type="button"
@@ -1107,7 +1107,16 @@ export default function ChatWindow({
                 >
                   📖 เช็คยอดสมุดบัญชี
                 </button>
-                <span className="ocr-test-hint">วางรูป (Ctrl+V) หรือลากมาวางได้เลย</span>
+                {ocrTestImages.length < getOcrMaxImages() && (
+                  <button
+                    type="button"
+                    className="btn-ocr-add-icon"
+                    title="เพิ่มรูป"
+                    onClick={() => ocrFileInputRef.current?.click()}
+                  >
+                    📎
+                  </button>
+                )}
               </div>
               {ocrTestType === 'ledger' && (
                 <div className="ocr-test-type-row">
@@ -1148,11 +1157,6 @@ export default function ChatWindow({
                     <button type="button" className="ocr-test-thumb-remove" onClick={() => handleOcrRemoveImage(i)}>×</button>
                   </div>
                 ))}
-                {ocrTestImages.length < getOcrMaxImages() && (
-                  <button type="button" className="btn-ocr-add" onClick={() => ocrFileInputRef.current?.click()}>
-                    📎 เพิ่มรูป
-                  </button>
-                )}
                 <input
                   ref={ocrFileInputRef}
                   type="file"

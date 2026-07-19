@@ -296,9 +296,10 @@
 .btn-compose-send:hover:not(:disabled) { background: #1d4ed8; }
 
 .btn-db-search-toggle {
-  padding: 0 14px; border-radius: 10px; border: 1px solid var(--border-color);
-  background: var(--bg-surface); color: var(--text-primary); font-weight: 600;
+  padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border-color);
+  background: var(--bg-surface); color: var(--text-primary); font-weight: 600; font-size: 12px;
   cursor: pointer; font-family: 'Kanit', sans-serif; white-space: nowrap; flex-shrink: 0;
+  align-self: flex-start;
 }
 .btn-db-search-toggle:hover { border-color: #2563eb; color: #2563eb; }
 .btn-db-search-toggle.active { background: #2563eb; border-color: #2563eb; color: white; }
@@ -311,13 +312,18 @@
 }
 .ocr-test-panel.drag-active { border-color: #2563eb; background: rgba(37,99,235,0.06); }
 .ocr-test-type-row { display: flex; gap: 8px; align-items: center; }
-.ocr-test-hint { font-size: 11px; opacity: 0.6; margin-left: 4px; }
 .btn-ocr-type {
   padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border-color);
   background: var(--bg-surface); color: var(--text-primary); font-size: 12px;
   cursor: pointer; font-family: 'Kanit', sans-serif;
 }
 .btn-ocr-type.active { background: #2563eb; border-color: #2563eb; color: white; }
+.btn-ocr-add-icon {
+  margin-left: auto; width: 28px; height: 28px; border-radius: 8px;
+  border: 1px solid var(--border-color); background: var(--bg-surface);
+  font-size: 14px; cursor: pointer; flex-shrink: 0;
+}
+.btn-ocr-add-icon:hover { border-color: #2563eb; }
 .ocr-ledger-group-select {
   padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border-color);
   background: var(--bg-surface); color: var(--text-primary); font-size: 12px;
@@ -329,10 +335,6 @@
 .ocr-test-thumb-remove {
   position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%;
   border: none; background: #dc2626; color: white; font-size: 12px; line-height: 1; cursor: pointer;
-}
-.btn-ocr-add {
-  padding: 0 10px; height: 44px; border-radius: 6px; border: 1px dashed var(--border-color);
-  background: var(--bg-surface); color: var(--text-primary); font-size: 11px; cursor: pointer;
 }
 
 /* ── DM คุยกับ AI ผู้ช่วย ──────────────────────────────────────── */
