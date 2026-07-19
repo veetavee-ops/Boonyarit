@@ -1,0 +1,24 @@
+.db-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 8px;
+  margin-left: 6px;
+  letter-spacing: 0.3px;
+}
+
+.db-badge--pk {
+  background: rgba(234, 179, 8, 0.18);
+  color: #a16207;
+}
+
+.db-badge--fk {
+  background: rgba(59, 130, 246, 0.15);
+  color: #1d4ed8;
+}
+
+.db-badge--sensitive {
+  background: rgba(220, 38, 38, 0.15);
+  color: #b91c1c;
+}

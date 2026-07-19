@@ -25,6 +25,7 @@ export default function Sidebar({
   onSelectGroup,
   onOpenDriveFiles,
   onOpenPaymentVerification,
+  onOpenDataBrowser,
   onPinChange,
 }) {
   // --- Label / Tab state ---
@@ -521,6 +522,17 @@ export default function Sidebar({
                 <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9 14l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" />
               </svg>
               ตรวจสอบการโอน-ตั้งเบิก
+            </button>
+          )}
+          {onOpenDataBrowser && (
+            <button
+              className="btn-drive-sidebar"
+              onClick={() => { onOpenDataBrowser(); onClose(); }}
+            >
+              <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
+                <path d="M12 3C7.58 3 4 4.79 4 7s3.58 4 8 4 8-1.79 8-4-3.58-4-8-4zM4 9v4c0 2.21 3.58 4 8 4s8-1.79 8-4V9c0 2.21-3.58 4-8 4s-8-1.79-8-4zm0 6v4c0 2.21 3.58 4 8 4s8-1.79 8-4v-4c0 2.21-3.58 4-8 4s-8-1.79-8-4z" />
+              </svg>
+              ดูตาราง DB
             </button>
           )}
         </div>

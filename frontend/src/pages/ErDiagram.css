@@ -1,0 +1,111 @@
+.erd-scroll {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  overflow: auto;
+  background: #eef1f4;
+}
+
+.erd-canvas {
+  position: relative;
+}
+
+.erd-lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.erd-edge-line {
+  stroke: #8a8f98;
+  stroke-width: 1.5;
+}
+
+.erd-edge-label {
+  font-size: 12px;
+  font-weight: 700;
+  fill: #6b7280;
+}
+
+.erd-box {
+  position: absolute;
+  background: #fff;
+  border: 1px solid #c0392b;
+  border-radius: 2px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  overflow: hidden;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+
+.erd-box:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+  transform: translateY(-1px);
+}
+
+.erd-box-title {
+  background: #fdf2f1;
+  border-bottom: 1px solid #c0392b;
+  padding: 6px 10px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #922b21;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.erd-box-fields {
+  padding: 4px 0;
+}
+
+.erd-field {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 10px;
+  height: 18px;
+  font-size: 11.5px;
+  color: #333;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.erd-field--more {
+  color: #9aa0a6;
+  font-style: italic;
+}
+
+.erd-key-icon,
+.erd-fk-icon,
+.erd-key-spacer {
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+  font-size: 11px;
+}
+
+.erd-fk-icon {
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.erd-field-name--pk {
+  text-decoration: underline;
+  font-weight: 600;
+  color: #c0392b;
+}
+
+.erd-field-name--fk {
+  color: #1d4ed8;
+}
+
+.erd-sensitive-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #dc2626;
+  margin-left: 2px;
+}
