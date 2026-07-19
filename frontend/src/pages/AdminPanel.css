@@ -222,6 +222,13 @@
 }
 .ap-flag-chip:hover { border-color: rgba(249,115,22,0.4); }
 
+.ap-flag-text-input {
+  padding: 5px 12px; border-radius: 20px; font-size: 11.5px;
+  border: 1.5px solid var(--border-color); background: var(--bg-surface);
+  color: var(--text-primary); font-family: 'Kanit', sans-serif; width: 130px;
+}
+.ap-flag-text-input:focus { border-color: rgba(249,115,22,0.5); outline: none; }
+
 /* ── System Settings Section ────────────────────────────────── */
 .ap-settings-card { margin: 0 24px 16px; }
 .ap-setting-row {

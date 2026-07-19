@@ -21,6 +21,7 @@ const usersRoute = require('./routes/users');
 const lineUsersRoute = require('./routes/lineUsers');
 const settingsRoute = require('./routes/settings');
 const paymentVerificationRoute = require('./routes/paymentVerification');
+const ledgerBalanceRoute = require('./routes/ledgerBalance');
 const aiProvidersRoute = require('./routes/aiProviders');
 
 // module สำหรับเปลี่ยนรหัสผ่าน + ลืมรหัสผ่าน (ส่งลิงก์ทาง email) — ดูรายละเอียดใน modules/passwordAuth/index.js
@@ -62,7 +63,9 @@ app.get('/health', (_req, res) => {
 // Webhook ต้องอยู่ก่อน express.json() เพราะ LINE middleware ต้องอ่าน raw body เอง
 app.use('/webhook', webhookRoute);
 
-app.use(express.json());
+// limit ยกจาก default 100kb เพื่อรองรับรูปทดสอบ OCR แบบ base64 ที่ส่งจาก dashboard (ดู
+// POST /api/messages/test-ocr) — ต้องแก้ตรงนี้เพราะเป็น express.json() ตัวเดียวที่ใช้ทั้งแอป
+app.use(express.json({ limit: '30mb' }));
 app.use(express.urlencoded({ extended: true }));
 
 // ===== API Routes (with rate limiting) =====
@@ -100,6 +103,7 @@ app.use('/api/users', usersRoute);
 app.use('/api/line-users', lineUsersRoute);
 app.use('/api/settings', settingsRoute);
 app.use('/api/payment-verification', paymentVerificationRoute);
+app.use('/api/ledger-balance', ledgerBalanceRoute);
 app.use('/api/ai-providers', aiProvidersRoute);
 
 

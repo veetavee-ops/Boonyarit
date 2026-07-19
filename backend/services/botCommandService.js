@@ -24,7 +24,7 @@ async function resolveProviderChain(providerSelector) {
     return all.map((p) => ({ name: p.name, baseUrl: p.baseUrl, apiKey: p.apiKey, model: p.model }));
 }
 
-// ── chain สำหรับงาน OCR (สรุปบิล/ตรวจสอบการโอนเงิน) — กรองเฉพาะ provider ที่ user ติ๊ก
+// ── chain สำหรับงาน OCR (สรุปบิล/ตรวจสอบการโอน-ตั้งเบิก) — กรองเฉพาะ provider ที่ user ติ๊ก
 // "รองรับรูปภาพ" ไว้ (supportsVision) เรียงตาม priority เดียวกับ chain สรุปแชท แต่เป็นคนละ subset กัน
 // ใช้เป็น fallback ต่อจาก Gemini native vision (callGeminiVision) ที่ยังลองก่อนเสมอ — ถ้าไม่มี provider
 // ที่ติ๊กไว้เลย คืน [] แล้วปล่อยให้ callProviderChainVision โยน error ที่อ่านง่ายเอง
@@ -198,6 +198,58 @@ async function buildSummarizeReply(daysBack, scopeWhere = {}, scopeLabel = '') {
     return `📋 สรุปแชท${rangeLabel} (${result.messageCount} ข้อความ)${scopeSuffix}\n\n${result.summary}`;
 }
 
+// ── ข้อความตอบกลับ "ตรวจสอบการโอน-ตั้งเบิก" — แยกออกมาจาก processPaymentVerification เดิมใน
+// webhook.js เพื่อให้ LINE จริงกับ POST /api/messages/test-ocr (ทดสอบผ่าน dashboard ไม่ผ่าน
+// LINE) ใช้ข้อความชุดเดียวกันเป๊ะ ไม่มีทาง drift ออกจากกันได้ ──────────────────────────────
+function buildPaymentVerifyReply(extracted, matchResults, overallStatus) {
+    const total = extracted.reportItems.reduce((sum, r) => sum + (Number(r.amount) || 0), 0);
+    if (overallStatus === 'matched') {
+        return `✅ ตรวจสอบแล้ว: ตรงกันครบ ${extracted.reportItems.length} รายการ (${total.toLocaleString('th-TH', { minimumFractionDigits: 2 })} บาท)`;
+    }
+    const problems = matchResults.filter((m) => m.status !== 'matched');
+    const lines = problems.slice(0, 5).map((m) => {
+        if (m.status === 'not_found_in_bank') return `• ${m.reportItem.payee} ${Number(m.reportItem.amount).toLocaleString('th-TH')} บาท — ไม่พบในรายการโอนจริง`;
+        return `• ${m.bankItem.counterName || '(ไม่ทราบชื่อ)'} ${Number(m.bankItem.amount).toLocaleString('th-TH')} บาท — มีรายการโอนที่ไม่ตรงกับตั้งเบิก`;
+    }).join('\n');
+    return `⚠️ พบรายการไม่ตรง ${problems.length} รายการ\n${lines}\n\nเข้าตรวจสอบ/แก้ไขได้ที่ Dashboard`;
+}
+
+// ── ข้อความตอบกลับ "สรุปบิลซื้อของ" — แยกออกมาจาก processReceiptSummary เดิมด้วยเหตุผลเดียวกัน ──
+function buildReceiptSummaryReply(extracted) {
+    if (!extracted.storeName || extracted.items.length === 0) {
+        return '❌ ไม่พบข้อมูลใบเสร็จในรูปที่ส่งมา กรุณาลองใหม่';
+    }
+    const itemsText = extracted.items.join('/');
+    const totalText = extracted.totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2 });
+    return `ซื้อของหน้าร้าน ${extracted.storeName} วันที่ ${extracted.purchaseDate || '-'} (1บิล) -${itemsText} ทั้งหมด ${extracted.items.length}รายการตามบิลแนบไว้ เป็นเงิน ${totalText} บาท`;
+}
+
+// ── ข้อความตอบกลับ "เช็คยอดสมุดบัญชี" (คนละฟีเจอร์กับตรวจสอบการโอน-ตั้งเบิกด้านบน) — เป็น pure
+// function เหมือนกัน เผื่ออนาคตมี dashboard test tool มาเรียกซ้ำแบบเดียวกับ 2 ฟังก์ชันบน ────────
+function buildLedgerBalanceReply(entry) {
+    const dirLabel = entry.direction === 'in' ? 'ยืมเงิน (เงินเข้า)' : 'คืนเงิน (เงินออก)';
+    const amountText = Number(entry.amount).toLocaleString('th-TH', { minimumFractionDigits: 2 });
+    const prevText = Number(entry.previousBalance).toLocaleString('th-TH', { minimumFractionDigits: 2 });
+    const newText = Number(entry.calculatedBalance).toLocaleString('th-TH', { minimumFractionDigits: 2 });
+    return `${dirLabel} ${amountText} บาท\n` +
+        `ยอดก่อนหน้า: ${prevText} บาท\n` +
+        `ยอดคงเหลือใหม่: ${newText} บาท\n\n` +
+        `กรุณาเทียบกับยอดที่บันทึกในสมุดครับ (พิมพ์ "เช็คสมุด" + แนบรูปเมื่อบันทึกแล้วเพื่อตรวจสอบ)`;
+}
+
+// ── ข้อความตอบกลับผลเทียบยอดที่คำนวณได้ กับยอดที่เขียนในสมุดจริง (คำสั่ง "เช็คสมุด") ────────
+function buildWrittenBalanceCheckReply(entry) {
+    const sysBal = Number(entry.calculatedBalance);
+    const bookBal = Number(entry.writtenBalanceExtracted);
+    const sysText = sysBal.toLocaleString('th-TH', { minimumFractionDigits: 2 });
+    const bookText = bookBal.toLocaleString('th-TH', { minimumFractionDigits: 2 });
+    if (entry.matchesWrittenBalance) {
+        return `✅ ตรงกัน — ระบบ ${sysText} บาท = สมุด ${bookText} บาท`;
+    }
+    const diffText = Math.abs(sysBal - bookBal).toLocaleString('th-TH', { minimumFractionDigits: 2 });
+    return `⚠️ ไม่ตรงกัน — ระบบคำนวณได้ ${sysText} บาท แต่สมุดเขียนไว้ ${bookText} บาท (ต่าง ${diffText} บาท) — กรุณาตรวจสอบรายการ`;
+}
+
 module.exports = {
     getSearchKeyword,
     getSummarizeKeyword,
@@ -207,4 +259,8 @@ module.exports = {
     buildSummarizeReply,
     resolveProviderChain,
     resolveVisionProviderChain,
+    buildPaymentVerifyReply,
+    buildReceiptSummaryReply,
+    buildLedgerBalanceReply,
+    buildWrittenBalanceCheckReply,
 };

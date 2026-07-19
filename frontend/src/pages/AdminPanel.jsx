@@ -10,8 +10,9 @@ import './AdminPanel.css';
 // ธงต่อกลุ่มที่เปิด/ปิดได้ในการ์ด "ตั้งค่าเฉพาะกลุ่ม" — เพิ่มฟีเจอร์ใหม่ในอนาคตแค่เพิ่ม object ในนี้
 // (ต้องเพิ่มชื่อ field ในฝั่ง backend ALLOWED_GROUP_FLAG_FIELDS ด้วย ดู routes/groups.js)
 const GROUP_FLAGS = [
-  { field: 'isPaymentVerifyGroup', label: 'ตรวจสอบการโอนเงิน' },
+  { field: 'isPaymentVerifyGroup', label: 'ตรวจสอบการโอน-ตั้งเบิก' },
   { field: 'isReceiptSummaryGroup', label: 'สรุปบิลซื้อของ' },
+  { field: 'isLedgerBalanceGroup', label: 'เช็คยอดสมุดบัญชี (ยืม-คืนเงิน)' },
 ];
 
 export default function AdminPanel() {
@@ -40,6 +41,10 @@ export default function AdminPanel() {
   const [receiptSummaryKeyword, setReceiptSummaryKeyword] = useState('225588');
   const [receiptSummaryKeywordSaving, setReceiptSummaryKeywordSaving] = useState(false);
   const [receiptSummaryKeywordSaved, setReceiptSummaryKeywordSaved] = useState(false);
+  // คำสั่ง "เช็คสมุด" ของฟีเจอร์เช็คยอดสมุดบัญชี ผ่าน LINE bot — คนละคำสั่งกับสรุปบิลด้านบน (default "เช็คสมุด")
+  const [ledgerBookCheckKeyword, setLedgerBookCheckKeyword] = useState('เช็คสมุด');
+  const [ledgerBookCheckKeywordSaving, setLedgerBookCheckKeywordSaving] = useState(false);
+  const [ledgerBookCheckKeywordSaved, setLedgerBookCheckKeywordSaved] = useState(false);
   // ค้นหาชื่อกลุ่มในการ์ด "ตั้งค่าเฉพาะกลุ่ม" (เปิด/ปิดธงฟีเจอร์ต่อกลุ่ม)
   const [groupFlagSearch, setGroupFlagSearch] = useState('');
 
@@ -63,6 +68,7 @@ export default function AdminPanel() {
         if (s.search_keyword) setSearchKeyword(s.search_keyword);
         if (s.summarize_keyword) setSummarizeKeyword(s.summarize_keyword);
         if (s.receipt_summary_keyword) setReceiptSummaryKeyword(s.receipt_summary_keyword);
+        if (s.ledger_book_check_keyword) setLedgerBookCheckKeyword(s.ledger_book_check_keyword);
       })
       .catch(() => {});
   }, []);
@@ -122,6 +128,20 @@ export default function AdminPanel() {
     }
   };
 
+  // บันทึก "ชื่ออ้างอิง" (เช่น "พรพล") ของกลุ่มที่เปิดฟีเจอร์เช็คยอดสมุดบัญชี — ใช้ endpoint เดียวกับ
+  // ธง boolean ด้านบน (ฝั่ง backend แยก logic ให้เองว่า field นี้เป็น text ไม่ใช่ boolean)
+  const handleSaveLedgerReferenceName = async (groupId, value) => {
+    const trimmed = value.trim();
+    try {
+      await toggleGroupFlag(groupId, 'ledgerReferenceName', trimmed);
+      setGroups((prev) =>
+        prev.map((g) => g.groupId === groupId ? { ...g, ledgerReferenceName: trimmed || null } : g)
+      );
+    } catch (err) {
+      setError('บันทึกชื่ออ้างอิงไม่สำเร็จ');
+    }
+  };
+
   const handleSaveReceiptSummaryKeyword = async () => {
     const trimmed = receiptSummaryKeyword.trim();
     if (!trimmed) return;
@@ -134,6 +154,21 @@ export default function AdminPanel() {
       setError('อัปเดตคำสั่งสรุปบิลไม่สำเร็จ');
     } finally {
       setReceiptSummaryKeywordSaving(false);
+    }
+  };
+
+  const handleSaveLedgerBookCheckKeyword = async () => {
+    const trimmed = ledgerBookCheckKeyword.trim();
+    if (!trimmed) return;
+    setLedgerBookCheckKeywordSaving(true);
+    setLedgerBookCheckKeywordSaved(false);
+    try {
+      await updateSetting('ledger_book_check_keyword', trimmed);
+      setLedgerBookCheckKeywordSaved(true);
+    } catch (err) {
+      setError('อัปเดตคำสั่งเช็คสมุดไม่สำเร็จ');
+    } finally {
+      setLedgerBookCheckKeywordSaving(false);
     }
   };
 
@@ -457,6 +492,30 @@ export default function AdminPanel() {
             </button>
           </div>
         </div>
+
+        <div className="ap-setting-row">
+          <div className="ap-setting-info">
+            <span className="ap-setting-label">คำสั่ง "เช็คสมุด" ผ่าน LINE bot (เช็คยอดสมุดบัญชี)</span>
+            <span className="ap-setting-desc">
+              พิมพ์คำนี้ในกลุ่มที่เปิดไว้ แล้วส่งรูปหน้าสมุดบัญชี — ตั้งยอดเริ่มต้น (ครั้งแรก) หรือเทียบยอดกับที่ระบบคำนวณไว้ (ครั้งถัดไป)
+            </span>
+          </div>
+          <div className="ap-form-row" style={{ flex: '0 0 auto' }}>
+            <input
+              className="ap-input"
+              style={{ width: 140 }}
+              value={ledgerBookCheckKeyword}
+              onChange={(e) => { setLedgerBookCheckKeyword(e.target.value); setLedgerBookCheckKeywordSaved(false); }}
+            />
+            <button
+              className="ap-btn-primary"
+              onClick={handleSaveLedgerBookCheckKeyword}
+              disabled={ledgerBookCheckKeywordSaving || !ledgerBookCheckKeyword.trim()}
+            >
+              {ledgerBookCheckKeywordSaving ? 'กำลังบันทึก...' : ledgerBookCheckKeywordSaved ? 'บันทึกแล้ว ✓' : 'บันทึก'}
+            </button>
+          </div>
+        </div>
       </div>
 
       {/* ── ตั้งค่าเฉพาะกลุ่ม (ธงฟีเจอร์) — ค้นหากลุ่มแล้วเปิด/ปิดได้หลายฟีเจอร์ต่อแถวเดียว ── */}
@@ -464,7 +523,7 @@ export default function AdminPanel() {
         <h2 className="ap-card-title">ตั้งค่าเฉพาะกลุ่ม</h2>
         <p className="ap-note">
           ค้นหากลุ่มแล้วเปิด/ปิดฟีเจอร์เฉพาะกลุ่มได้เลย — กลุ่มที่ไม่เปิดธงจะไม่ถูกแตะต้องเลย
-          (ตรวจสอบการโอนเงิน: ส่งรูป "รายงานตั้งเบิก" + "สกรีนธนาคาร" 2 รูปติดกัน / สรุปบิลซื้อของ:
+          (ตรวจสอบการโอน-ตั้งเบิก: ส่งรูป "รายงานตั้งเบิก" + "สกรีนธนาคาร" 2 รูปติดกัน / สรุปบิลซื้อของ:
           พิมพ์คำสั่งด้านบนแล้วส่งรูปบิล 1-10 รูป)
         </p>
         <input
@@ -506,6 +565,17 @@ export default function AdminPanel() {
                         {flag.label}
                       </button>
                     ))}
+                    {g.isLedgerBalanceGroup && (
+                      <input
+                        key={`${g.groupId}-${g.ledgerReferenceName || ''}`}
+                        type="text"
+                        className="ap-flag-text-input"
+                        placeholder="ชื่ออ้างอิง เช่น พรพล"
+                        defaultValue={g.ledgerReferenceName || ''}
+                        onBlur={(e) => handleSaveLedgerReferenceName(g.groupId, e.target.value)}
+                        onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                      />
+                    )}
                   </div>
                 </li>
               ))}

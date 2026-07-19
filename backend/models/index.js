@@ -9,6 +9,7 @@ const Setting = require('./Setting');
 const PaymentVerification = require('./PaymentVerification');
 const AccountLedgerEntry = require('./AccountLedgerEntry');
 const AiProvider = require('./AiProvider');
+const LedgerBalanceEntry = require('./LedgerBalanceEntry');
 
 // ความสัมพันธ์ระหว่าง Message, User, Group
 Message.belongsTo(User, { foreignKey: 'userId', as: 'user' });
@@ -40,6 +41,10 @@ AccountLedgerEntry.belongsTo(Group, { foreignKey: 'groupId', targetKey: 'groupId
 AccountLedgerEntry.belongsTo(PaymentVerification, { foreignKey: 'paymentVerificationId', as: 'verification' });
 PaymentVerification.hasMany(AccountLedgerEntry, { foreignKey: 'paymentVerificationId', as: 'ledgerEntries' });
 
+// LedgerBalanceEntry ผูกกับ Group (คนละ schema — ต้อง constraints: false เหมือน PaymentVerification ด้านบน)
+// ฟีเจอร์ "เช็คยอดสมุดบัญชี" นี้แยกจาก PaymentVerification สิ้นเชิง ไม่มีความสัมพันธ์ต่อกันเลย
+LedgerBalanceEntry.belongsTo(Group, { foreignKey: 'groupId', targetKey: 'groupId', as: 'group', constraints: false });
+
 module.exports = {
   User,
   Group,
@@ -52,4 +57,5 @@ module.exports = {
   PaymentVerification,
   AccountLedgerEntry,
   AiProvider,
+  LedgerBalanceEntry,
 };

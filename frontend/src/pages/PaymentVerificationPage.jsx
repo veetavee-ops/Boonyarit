@@ -164,7 +164,7 @@ export default function PaymentVerificationPage({ onClose }) {
     ? 'รายละเอียดการตรวจสอบ'
     : selectedAccount
     ? `บัญชี: ${selectedAccount.groupName || selectedAccount.groupId}`
-    : 'ตรวจสอบการโอน-จ่ายเงิน'
+    : 'ตรวจสอบการโอน-ตั้งเบิก'
 
   return (
     <div className="drive-modal-overlay" onClick={goBack}>
@@ -348,7 +348,7 @@ export default function PaymentVerificationPage({ onClose }) {
               {accountsLoading ? (
                 <div className="drive-empty"><div className="spinner" /><p>กำลังโหลด...</p></div>
               ) : accounts.length === 0 ? (
-                <div className="drive-empty"><p>ยังไม่มีกลุ่มที่เปิดใช้ฟีเจอร์ตรวจสอบการโอนเงิน</p></div>
+                <div className="drive-empty"><p>ยังไม่มีกลุ่มที่เปิดใช้ฟีเจอร์ตรวจสอบการโอน-ตั้งเบิก</p></div>
               ) : (
                 <div className="pv-account-grid">
                   {accounts.map((acc) => (

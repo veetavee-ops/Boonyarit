@@ -31,9 +31,12 @@ setupSockets(io);
 
 // ===== DB Sync & Start =====
 const syncOptions = {};
-// payment_verification เก็บใน schema แยกจาก public (ledger การเงิน ไม่ปนกับตาราง messages ทั่วไป)
-// ต้องสร้าง schema เองก่อน เพราะ sequelize.sync() ไม่สร้าง schema ให้อัตโนมัติ
+// payment_verification / ledger_balance เก็บคนละ schema จาก public (ข้อมูลการเงิน ไม่ปนกับตาราง
+// messages ทั่วไป) — ledger_balance แยกจาก payment_verification เองด้วยเพราะเป็นฟีเจอร์คนละตัว
+// ("เช็คยอดสมุดบัญชี" ไม่ใช่ "ตรวจสอบการโอน-ตั้งเบิก") ต้องสร้าง schema เองก่อนเสมอ เพราะ sequelize.sync()
+// ไม่สร้าง schema ให้อัตโนมัติ
 sequelize.query('CREATE SCHEMA IF NOT EXISTS payment_verification')
+  .then(() => sequelize.query('CREATE SCHEMA IF NOT EXISTS ledger_balance'))
   .then(() => sequelize.sync(syncOptions))
   .then(() => seedBuiltInAiProviders())
   .then(() => {

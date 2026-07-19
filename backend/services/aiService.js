@@ -410,8 +410,11 @@ async function callProviderChainVision(prompt, providers, imageBuffers) {
       if (i > 0) result.modelLabel += ' (fallback)';
       return result;
     } catch (err) {
-      lastError = err;
       const msg = err.response?.data?.error?.message || err.message;
+      // เก็บ error ที่มีรายละเอียดจริง (ชื่อ provider + สาเหตุจาก response body) แทนโยน axios error
+      // ดิบๆ กลับไป — เดิม throw lastError (= err) ทำให้ .message กลายเป็นข้อความทั่วไปเช่น
+      // "Request failed with status code 429" ซึ่งไม่บอกว่า provider ไหนพังหรือเพราะอะไร
+      lastError = new Error(`${providers[i].name}: ${msg}`);
       const nextNote = i < providers.length - 1 ? ` — ลองตัวถัดไป (${providers[i + 1].name})` : '';
       console.warn(`⚠️ [vision] ${providers[i].name} failed: ${msg}${nextNote}`);
     }
@@ -631,6 +634,108 @@ async function extractReceiptSummary(imageBuffers, visionChain = []) {
   };
 }
 
+// ── Vision: อ่านสลิปโอนเงิน (1-2 รูป ของธุรกรรมเดียวกัน) สำหรับฟีเจอร์ "เช็คยอดสมุดบัญชี" ──
+// ต่างจาก extractPaymentDocuments (รายงานตั้งเบิก vs สกรีนธนาคาร) — อันนี้อ่านแค่สลิปโอนเงินเดี่ยวๆ
+// แล้วให้ AI ตัดสิน direction (ยืม/คืน) เองโดยเทียบชื่อ referenceName กับฝั่ง "จาก"/"ถึง" บนสลิป —
+// ถ้าหาไม่เจอ ต้องคืน direction: null ให้ webhook.js ปฏิเสธไม่สร้าง entry (ห้ามเดาทิศทางเงินเด็ดขาด
+// เพราะทิศทางผิดจะทำให้ยอดคงเหลือเพี้ยนสะสมไปทุกรายการถัดไป)
+async function extractTransferSlip(imageBuffers, visionChain = [], referenceName = '') {
+  const prompt = `คุณเป็นผู้ช่วยอ่านสลิปโอนเงิน (เช่น K PLUS "โอนเงินสำเร็จ") จะได้รับรูป ${imageBuffers.length} รูป ซึ่งเป็นสลิปของธุรกรรมเดียวกัน (อาจถ่ายแยกเป็นหลายรูป) แกะข้อมูลออกมาเป็น JSON ตาม schema นี้เป๊ะๆ (ห้ามมีข้อความอื่นนอกจาก JSON, ห้ามใส่ markdown code fence):
+
+{
+  "amount": 50000.00,
+  "occurredAt": "18/07/69 10:04" (วันที่-เวลาบนสลิป ตามที่ปรากฏ, null ถ้าอ่านไม่ได้),
+  "fromName": "ชื่อผู้โอน (ฝั่ง จาก) ตามที่ปรากฏบนสลิป",
+  "fromAccount": "เลขบัญชีผู้โอน ถ้ามี (อาจมีการปิดบางส่วน)",
+  "toName": "ชื่อผู้รับ (ฝั่ง ถึง) ตามที่ปรากฏบนสลิป",
+  "toAccount": "เลขบัญชีผู้รับ ถ้ามี",
+  "refNumber": "เลขที่รายการ ถ้ามี",
+  "direction": "in" หรือ "out" หรือ null,
+  "referenceNameMatched": "from" หรือ "to" หรือ null,
+  "note": "อธิบายสั้นๆ ถ้า direction เป็น null ว่าทำไมตัดสินไม่ได้"
+}
+
+กติกาการตัดสิน direction — สำคัญมาก ห้ามเดาถ้าไม่แน่ใจ:
+- ชื่ออ้างอิงที่ต้องเทียบคือ "${referenceName}"
+- ถ้าชื่อนี้ (หรือชื่อที่สะกด/เขียนคล้ายกันมาก) ปรากฏอยู่ฝั่ง "จาก" (fromName) → direction = "in", referenceNameMatched = "from"
+- ถ้าชื่อนี้ปรากฏอยู่ฝั่ง "ถึง" (toName) → direction = "out", referenceNameMatched = "to"
+- ถ้าหาชื่อนี้ไม่เจอในทั้ง 2 ฝั่งเลย หรือไม่แน่ใจ → direction = null, referenceNameMatched = null (ห้ามเดา)
+- ถ้าอ่านตัวเลข amount ไม่ชัด ให้ใส่ค่าที่อ่านได้ดีที่สุด อย่าใส่ null ถ้าพอเดาได้จากบริบท`;
+
+  let result;
+  try {
+    result = await callGeminiVision(prompt, imageBuffers);
+  } catch (primaryError) {
+    console.warn(`⚠️ Gemini vision failed: ${primaryError.message} — ลองใช้ provider ที่รองรับรูปภาพแทน`);
+    result = await callProviderChainVision(prompt, visionChain, imageBuffers);
+    if (!result.modelLabel.includes('(fallback)')) result.modelLabel += ' (fallback)';
+  }
+
+  console.log(`✅ Transfer slip extracted by ${result.modelLabel}`);
+
+  let parsed;
+  try {
+    parsed = parseJsonFromModel(result.text);
+  } catch (e) {
+    throw new Error(`อ่าน JSON จากผลลัพธ์ AI ไม่สำเร็จ: ${e.message}\n--- raw ---\n${result.text.slice(0, 500)}`);
+  }
+
+  return {
+    amount: Number(parsed.amount) || 0,
+    occurredAt: parsed.occurredAt || null,
+    fromName: parsed.fromName || null,
+    fromAccount: parsed.fromAccount || null,
+    toName: parsed.toName || null,
+    toAccount: parsed.toAccount || null,
+    refNumber: parsed.refNumber || null,
+    direction: parsed.direction === 'in' || parsed.direction === 'out' ? parsed.direction : null,
+    referenceNameMatched: parsed.referenceNameMatched === 'from' || parsed.referenceNameMatched === 'to' ? parsed.referenceNameMatched : null,
+    note: parsed.note || null,
+    model: result.modelLabel,
+  };
+}
+
+// ── Vision: อ่านยอด "คงเหลือ" แถวล่างสุดในรูปสมุดบัญชีที่เขียนด้วยมือ (1 รูป) ──────────────
+// ใช้ทั้งตอนตั้งยอดเริ่มต้น (seed, ยังไม่มี entry ไหนในระบบเลย) และตอนเช็คยอดย้อนหลัง (คำสั่ง "เช็คสมุด")
+async function extractWrittenBalance(imageBuffer, visionChain = []) {
+  const prompt = `คุณเป็นผู้ช่วยอ่านสมุดบัญชีที่เขียนด้วยลายมือ มีคอลัมน์ วัน-เดือน-ปี, รายการ, รับ, จ่าย, คงเหลือ อ่านตัวเลขในคอลัมน์ "คงเหลือ" ของแถวล่างสุดที่มีการเขียนไว้ (แถวสุดท้ายที่มีข้อมูล ไม่ใช่แถวว่าง) คืนเป็น JSON ตาม schema นี้เป๊ะๆ (ห้ามมีข้อความอื่นนอกจาก JSON, ห้ามใส่ markdown code fence):
+
+{
+  "balance": 12345.00,
+  "rowDate": "วันที่ของแถวนั้นตามที่เขียนไว้ ถ้าอ่านได้",
+  "confident": true หรือ false
+}
+
+กติกา:
+- ถ้าลายมืออ่านยากจนไม่มั่นใจ ให้ confident: false แต่ยังคงต้องใส่ตัวเลขที่อ่านได้ดีที่สุดใน balance (ห้ามใส่ null)
+- อ่านเฉพาะแถวล่างสุดที่มีตัวเลขเขียนไว้จริงเท่านั้น อย่าอ่านแถวว่างที่ยังไม่มีการกรอก`;
+
+  let result;
+  try {
+    result = await callGeminiVision(prompt, [imageBuffer]);
+  } catch (primaryError) {
+    console.warn(`⚠️ Gemini vision failed: ${primaryError.message} — ลองใช้ provider ที่รองรับรูปภาพแทน`);
+    result = await callProviderChainVision(prompt, visionChain, [imageBuffer]);
+    if (!result.modelLabel.includes('(fallback)')) result.modelLabel += ' (fallback)';
+  }
+
+  console.log(`✅ Written balance extracted by ${result.modelLabel}`);
+
+  let parsed;
+  try {
+    parsed = parseJsonFromModel(result.text);
+  } catch (e) {
+    throw new Error(`อ่าน JSON จากผลลัพธ์ AI ไม่สำเร็จ: ${e.message}\n--- raw ---\n${result.text.slice(0, 500)}`);
+  }
+
+  return {
+    balance: Number(parsed.balance) || 0,
+    rowDate: parsed.rowDate || null,
+    confident: parsed.confident !== false,
+    model: result.modelLabel,
+  };
+}
+
 module.exports = {
   summarizeAllChatsForDate,
   extractPaymentDocuments,
@@ -641,4 +746,6 @@ module.exports = {
   sanitizeCredential,
   callProviderChain,
   callProviderChainVision,
+  extractTransferSlip,
+  extractWrittenBalance,
 };

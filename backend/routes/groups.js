@@ -28,8 +28,8 @@ router.get('/', async (req, res) => {
           'groupId',
           [sequelize.fn('MAX', sequelize.col('timestamp')), 'lastMessageTime'],
         ],
-        include: [{ model: Group, as: 'group', attributes: ['groupName', 'pictureUrl', 'isPaymentVerifyGroup', 'isReceiptSummaryGroup'] }],
-        group: ['Message.groupId', 'group.groupId', 'group.isPaymentVerifyGroup', 'group.isReceiptSummaryGroup'],
+        include: [{ model: Group, as: 'group', attributes: ['groupName', 'pictureUrl', 'isPaymentVerifyGroup', 'isReceiptSummaryGroup', 'isLedgerBalanceGroup', 'ledgerReferenceName'] }],
+        group: ['Message.groupId', 'group.groupId', 'group.isPaymentVerifyGroup', 'group.isReceiptSummaryGroup', 'group.isLedgerBalanceGroup', 'group.ledgerReferenceName'],
         order: [[sequelize.fn('MAX', sequelize.col('timestamp')), 'DESC']],
       });
 
@@ -41,6 +41,8 @@ router.get('/', async (req, res) => {
         lastMessageTime: m.dataValues.lastMessageTime,
         isPaymentVerifyGroup: m.group?.isPaymentVerifyGroup || false,
         isReceiptSummaryGroup: m.group?.isReceiptSummaryGroup || false,
+        isLedgerBalanceGroup: m.group?.isLedgerBalanceGroup || false,
+        ledgerReferenceName: m.group?.ledgerReferenceName || null,
       }));
     } catch (error) {
       console.error('[ERROR] Fetching group chats:', error.message);
@@ -211,19 +213,25 @@ router.get('/stats', async (req, res) => {
 // body: { field, value } — field ต้องอยู่ใน whitelist เท่านั้น กัน mass-assignment ไปคอลัมน์อื่นของ Group
 // เพิ่มฟีเจอร์ใหม่ในอนาคต = เพิ่มคอลัมน์ boolean ใน Group model แล้วเติมชื่อ field ในนี้บรรทัดเดียว (คู่กับ
 // GROUP_FLAGS ฝั่ง frontend ใน AdminPanel.jsx) เฉพาะ role admin เท่านั้น (เหมือนหน้า Dashboard ตรวจสอบเงิน)
-const ALLOWED_GROUP_FLAG_FIELDS = ['isPaymentVerifyGroup', 'isReceiptSummaryGroup'];
+const ALLOWED_GROUP_FLAG_FIELDS = ['isPaymentVerifyGroup', 'isReceiptSummaryGroup', 'isLedgerBalanceGroup'];
+// ฟิลด์ข้อความ (ไม่ใช่ boolean) ที่แก้ผ่าน endpoint เดียวกันนี้ได้ — ต้องแยกจาก ALLOWED_GROUP_FLAG_FIELDS
+// ด้านบนเพราะ logic เดิมบังคับ !!value เป็น boolean เสมอ ถ้าใช้กับฟิลด์นี้ค่า string จะถูกบีบเป็น true/false
+const ALLOWED_GROUP_TEXT_FIELDS = ['ledgerReferenceName'];
 
 router.patch('/:groupId/flags', requireAdmin, async (req, res) => {
   try {
     const { field, value } = req.body;
-    if (!ALLOWED_GROUP_FLAG_FIELDS.includes(field)) {
+    const isBooleanField = ALLOWED_GROUP_FLAG_FIELDS.includes(field);
+    const isTextField = ALLOWED_GROUP_TEXT_FIELDS.includes(field);
+    if (!isBooleanField && !isTextField) {
       return res.status(400).json({ error: 'ฟิลด์นี้ไม่ได้รับอนุญาตให้แก้ผ่าน endpoint นี้' });
     }
     const group = await Group.findByPk(req.params.groupId);
     if (!group) return res.status(404).json({ error: 'ไม่พบกลุ่ม' });
 
-    await group.update({ [field]: !!value });
-    res.json({ groupId: group.groupId, [field]: !!group[field] });
+    const newValue = isTextField ? (String(value || '').trim() || null) : !!value;
+    await group.update({ [field]: newValue });
+    res.json({ groupId: group.groupId, [field]: group[field] });
   } catch (error) {
     console.error('[ERROR] PATCH /api/groups/:groupId/flags:', error.message);
     res.status(500).json({ error: error.message });

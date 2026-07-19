@@ -565,7 +565,7 @@ export default function SummarySidebar({
                             onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
                           />
                           {p.isBuiltIn && <span className="ai-provider-builtin-badge" title="built-in จาก .env">⚡</span>}
-                          {p.supportsVision && <span className="ai-provider-vision-badge" title="รองรับรูปภาพ — ใช้เป็น fallback สำหรับ OCR สรุปบิล/ตรวจสอบการโอนเงิน">🖼️</span>}
+                          {p.supportsVision && <span className="ai-provider-vision-badge" title="รองรับรูปภาพ — ใช้เป็น fallback สำหรับ OCR สรุปบิล/ตรวจสอบการโอน-ตั้งเบิก">🖼️</span>}
                           <span className="ai-provider-list-name">{p.name}</span>
                           <span className="ai-provider-list-model">{p.model}</span>
                           <button
@@ -654,7 +654,7 @@ export default function SummarySidebar({
                     checked={newProviderSupportsVision}
                     onChange={(e) => setNewProviderSupportsVision(e.target.checked)}
                   />
-                  🖼️ รองรับรูปภาพ (ใช้เป็น fallback สำหรับ OCR สรุปบิล/ตรวจสอบการโอนเงิน)
+                  🖼️ รองรับรูปภาพ (ใช้เป็น fallback สำหรับ OCR สรุปบิล/ตรวจสอบการโอน-ตั้งเบิก)
                 </label>
 
                 <button
