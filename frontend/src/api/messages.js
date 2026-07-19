@@ -142,6 +142,21 @@ export async function askAssistant(text) {
 }
 
 /**
+ * ทดสอบ OCR (ตรวจสอบการโอน/สรุปใบเสร็จ) จากรูปที่อัปโหลดตรงจาก dashboard — ไม่ผ่าน LINE, ไม่บันทึกลง DB
+ * type: 'payment' | 'receipt', images: string[] (data URL แบบ "data:image/jpeg;base64,...")
+ */
+export async function testOcr({ type, images, groupId }) {
+  try {
+    const res = await axiosInstance.post('/api/messages/test-ocr', { type, images, groupId }, {
+      timeout: 120000, // 2 minutes — vision call + fallback chain อาจช้า
+    })
+    return res.data
+  } catch (error) {
+    throw new Error(error.response?.data?.error || 'ทดสอบ OCR ไม่สำเร็จ')
+  }
+}
+
+/**
  * เช็คว่าข้อความที่พิมพ์ในห้องแชทจริงตรงกับคำสั่ง "ค้นหา"/"สรุปเลย" ไหม (สโคปเฉพาะห้องนี้)
  * คืน { isCommand: false } ถ้าไม่ตรงคำสั่งไหนเลย
  */

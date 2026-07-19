@@ -303,9 +303,47 @@
 .btn-db-search-toggle:hover { border-color: #2563eb; color: #2563eb; }
 .btn-db-search-toggle.active { background: #2563eb; border-color: #2563eb; color: white; }
 
+/* ── ปุ่ม "ทดสอบ OCR" — อัปโหลดรูปทดสอบ ตรวจสอบการโอน/สรุปใบเสร็จ โดยไม่ผ่าน LINE ── */
+/* รับรูปได้ 3 ทาง: เลือกไฟล์ / paste (Ctrl+V) / ลากมาวาง — drag-active คือ state ตอนลากไฟล์ผ่านอยู่ */
+.ocr-test-panel {
+  display: flex; flex-direction: column; gap: 8px; flex: 1;
+  border-radius: 8px; border: 1px dashed transparent; transition: border-color .15s, background .15s;
+}
+.ocr-test-panel.drag-active { border-color: #2563eb; background: rgba(37,99,235,0.06); }
+.ocr-test-type-row { display: flex; gap: 8px; align-items: center; }
+.ocr-test-hint { font-size: 11px; opacity: 0.6; margin-left: 4px; }
+.btn-ocr-type {
+  padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border-color);
+  background: var(--bg-surface); color: var(--text-primary); font-size: 12px;
+  cursor: pointer; font-family: 'Kanit', sans-serif;
+}
+.btn-ocr-type.active { background: #2563eb; border-color: #2563eb; color: white; }
+.ocr-ledger-group-select {
+  padding: 4px 10px; border-radius: 8px; border: 1px solid var(--border-color);
+  background: var(--bg-surface); color: var(--text-primary); font-size: 12px;
+  font-family: 'Kanit', sans-serif; max-width: 220px;
+}
+.ocr-test-images-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.ocr-test-thumb { position: relative; width: 44px; height: 44px; }
+.ocr-test-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; border: 1px solid var(--border-color); }
+.ocr-test-thumb-remove {
+  position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%;
+  border: none; background: #dc2626; color: white; font-size: 12px; line-height: 1; cursor: pointer;
+}
+.btn-ocr-add {
+  padding: 0 10px; height: 44px; border-radius: 6px; border: 1px dashed var(--border-color);
+  background: var(--bg-surface); color: var(--text-primary); font-size: 11px; cursor: pointer;
+}
+
 /* ── DM คุยกับ AI ผู้ช่วย ──────────────────────────────────────── */
 .ai-assistant-messages {
   display: flex; flex-direction: column; gap: 10px; padding: 16px; overflow-y: auto;
+  border: 2px dashed transparent; transition: border-color .15s, background .15s;
+}
+/* ตอนเปิดปุ่ม "ทดสอบ OCR" พื้นที่แชททั้งหมดกลายเป็นจุดวางรูปได้ (ใหญ่กว่า panel เล็กๆ ด้านล่างเยอะ) */
+.ai-assistant-messages.drag-active { border-color: #2563eb; background: rgba(37,99,235,0.06); }
+.ocr-drop-hint {
+  align-self: center; font-size: 12px; opacity: 0.5; padding: 10px; text-align: center;
 }
 .ai-assistant-hint { font-size: 12px; opacity: 0.7; margin-top: 4px; }
 .ai-msg {
@@ -322,6 +360,26 @@
 .ai-msg--thinking { opacity: 0.5; font-style: italic; }
 .ai-msg-link { color: inherit; text-decoration: underline; word-break: break-all; }
 .ai-msg--user .ai-msg-link { color: white; }
+/* รูปที่แนบไปกับ bubble ทดสอบ OCR — เห็นในกระทู้แชทว่าทดสอบด้วยรูปไหนไปบ้าง (local เท่านั้น
+   ไม่ได้อัปโหลดเก็บถาวรที่ไหน หายไปเองตอนรีเฟรช/ออกจากห้องเหมือนกับ aiMessages ทั้งก้อน) */
+.ai-msg-images { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+.ai-msg-images img {
+  width: 70px; height: 70px; object-fit: cover; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.4);
+}
+
+/* พรีวิวรูปที่แนบไว้แล้วแต่ยังไม่กดทดสอบ OCR — จางกว่า bubble ปกตินิดหน่อยให้รู้ว่ายังไม่ส่งจริง */
+.ai-msg--pending { opacity: 0.85; border: 1px dashed rgba(255,255,255,0.5); }
+.ai-msg-image-pending { position: relative; width: 70px; height: 70px; }
+.ai-msg-image-pending img {
+  width: 100%; height: 100%; object-fit: cover; border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.4);
+}
+.ai-msg-image-pending button {
+  position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%;
+  border: none; background: #dc2626; color: white; font-size: 12px; line-height: 1; cursor: pointer;
+}
+.ocr-pending-label { display: block; font-size: 11px; opacity: 0.85; }
 
 /* ── คำตอบคำสั่ง ค้นหา/สรุป ที่ตอบ local ในกระทู้แชทจริง (ไม่บันทึกลง DB) ──────── */
 .local-bubbles {

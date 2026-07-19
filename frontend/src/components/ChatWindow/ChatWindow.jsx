@@ -3,6 +3,7 @@ import { getInitials, getColor, scrollToAndHighlightMessage } from '../../utils/
 import MessageBubble from '../MessageBubble/MessageBubble'
 import MediaGallery from '../MediaGallery/MediaGallery'
 import { fetchImportantMessages } from '../../api/messages'
+import { fetchLedgerBalanceAccounts } from '../../api/ledgerBalance'
 import './ChatWindow.css'
 
 // แปลง URL / ลิงก์ markdown [label](url) / **ไฮไลต์** ในข้อความ (คำตอบจาก AI/คำสั่งค้นหา) ให้เป็น
@@ -138,6 +139,8 @@ export default function ChatWindow({
   canSendDirect = false,
   onSendDirectMessage,
   onAskAssistant,
+  canTestOcr = false,
+  onTestOcr,
   onCheckCommand,
   onJumpToMessage,
   onJumpToMessageDirect,
@@ -256,7 +259,7 @@ export default function ChatWindow({
   const handleDbSearchToggle = () => {
     setDbSearchOpen((v) => {
       const next = !v
-      if (next) setTimeout(() => dbSearchInputRef.current?.focus(), 0)
+      if (next) { setTimeout(() => dbSearchInputRef.current?.focus(), 0); setOcrTestOpen(false); resetOcrTest() }
       else setDbSearchText('')
       return next
     })
@@ -281,6 +284,167 @@ export default function ChatWindow({
       e.stopPropagation()
       setDbSearchOpen(false)
       setDbSearchText('')
+    }
+  }
+
+  // ── ปุ่ม "ทดสอบ OCR" — อัปโหลดรูปทดสอบ 3 ฟีเจอร์ OCR (ตรวจสอบการโอน-ตั้งเบิก/สรุปใบเสร็จ/เช็คยอด
+  // สมุดบัญชี) โดยไม่ผ่าน LINE และไม่บันทึกลง DB — เรียก pipeline จริงเดียวกับ LINE ผ่าน onTestOcr
+  // (ดู App.jsx handleTestOcr) — เช็คยอดสมุดบัญชีอ่านยอดจริงของกลุ่มมาคำนวณ preview (read-only) เท่านั้น ──
+  const [ocrTestOpen, setOcrTestOpen] = useState(false)
+  const [ocrTestType, setOcrTestType] = useState('payment') // 'payment' | 'receipt' | 'ledger'
+  const [ocrTestImages, setOcrTestImages] = useState([])    // [{ dataUrl, name }]
+  const ocrFileInputRef = useRef(null)
+
+  // ── โหมดย่อยของ "เช็คยอดสมุดบัญชี" — ต้องเลือกกลุ่ม/บริษัทก่อนเสมอ (ดึงจากกลุ่มที่เปิดธงไว้แล้ว) ──
+  const [ocrLedgerMode, setOcrLedgerMode] = useState('slip') // 'slip' (สลิปโอนเงิน 1-2 รูป) | 'book' (เช็คสมุด 1 รูป)
+  const [ocrLedgerGroupId, setOcrLedgerGroupId] = useState('')
+  const [ocrLedgerAccounts, setOcrLedgerAccounts] = useState([])
+  const [ocrLedgerAccountsLoading, setOcrLedgerAccountsLoading] = useState(false)
+
+  const getOcrMaxImages = () => {
+    if (ocrTestType === 'payment') return 2
+    if (ocrTestType === 'receipt') return 10
+    return ocrLedgerMode === 'slip' ? 2 : 1 // ledger
+  }
+
+  const resetOcrTest = () => setOcrTestImages([])
+
+  const handleOcrTestToggle = () => {
+    setOcrTestOpen((v) => {
+      const next = !v
+      if (next) { setDbSearchOpen(false); setDbSearchText('') } // เปิดพร้อมกับ ค้นหาDB ไม่ได้
+      else resetOcrTest()
+      return next
+    })
+  }
+
+  // โหลดรายชื่อกลุ่มที่เปิดธง "เช็คยอดสมุดบัญชี" ไว้ ตอนสลับมาโหมด ledger ครั้งแรกที่เปิด panel
+  useEffect(() => {
+    if (!ocrTestOpen || ocrTestType !== 'ledger') return
+    setOcrLedgerAccountsLoading(true)
+    fetchLedgerBalanceAccounts()
+      .then((accounts) => setOcrLedgerAccounts(Array.isArray(accounts) ? accounts : []))
+      .catch(() => setOcrLedgerAccounts([]))
+      .finally(() => setOcrLedgerAccountsLoading(false))
+  }, [ocrTestOpen, ocrTestType])
+
+  // สลับโหมด payment/receipt/ledger ล้างรูปที่เลือกไว้เสมอ เพราะจำนวนรูปที่ต้องการต่างกัน
+  const handleOcrTypeChange = (type) => {
+    if (type === ocrTestType) return
+    setOcrTestType(type)
+    resetOcrTest()
+  }
+
+  // สลับโหมดย่อย สลิป/สมุด ภายใน ledger ก็ล้างรูปเหมือนกัน (จำนวนรูปที่ต้องการต่างกัน 1-2 ต่อ 1)
+  const handleOcrLedgerModeChange = (mode) => {
+    if (mode === ocrLedgerMode) return
+    setOcrLedgerMode(mode)
+    resetOcrTest()
+  }
+
+  // ── รับรูปเข้า ocrTestImages ได้ 3 ทาง (ปุ่ม 📎 เลือกไฟล์ / paste / drag-drop) ใช้ pipeline นี้ร่วมกัน ──
+  // เช็คทั้ง MIME type และนามสกุลไฟล์ — บาง OS/เบราว์เซอร์ตอนลากไฟล์วางไม่ใส่ f.type มาให้ (เป็น '')
+  // เช็คแค่ f.type.startsWith('image/') อย่างเดียวเลยกรองรูปทิ้งหมดในบางเครื่อง
+  const isImageFile = (f) => f.type.startsWith('image/') || /\.(jpe?g|png|gif|webp|bmp|heic)$/i.test(f.name || '')
+  const addOcrFiles = (fileList) => {
+    const files = Array.from(fileList || []).filter(isImageFile)
+    const max = getOcrMaxImages()
+    files.forEach((file) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        setOcrTestImages((prev) => prev.length >= max ? prev : [...prev, { dataUrl: reader.result, name: file.name }])
+      }
+      reader.readAsDataURL(file)
+    })
+  }
+
+  const handleOcrFilesSelected = (e) => {
+    addOcrFiles(e.target.files)
+    e.target.value = '' // ให้เลือกไฟล์เดิมซ้ำได้
+  }
+
+  // วาง (Ctrl+V) รูปจาก clipboard ได้เลยตอน panel เปิดอยู่ — ดักที่ window เพราะ panel ไม่มีช่อง
+  // พิมพ์ให้ focus (เหมือน pattern ESC cascade ด้านล่างที่ดักที่ window เช่นกัน)
+  useEffect(() => {
+    if (!ocrTestOpen) return
+    const onPaste = (e) => {
+      const items = Array.from(e.clipboardData?.items || [])
+      const files = items.filter((it) => it.kind === 'file').map((it) => it.getAsFile()).filter(Boolean)
+      if (files.length > 0) { e.preventDefault(); addOcrFiles(files) }
+    }
+    window.addEventListener('paste', onPaste)
+    return () => window.removeEventListener('paste', onPaste)
+  }, [ocrTestOpen, ocrTestType, ocrLedgerMode])
+
+  // ── ลากไฟล์รูปมาวางได้ทั้งหน้าตอน panel เปิดอยู่ — ดักที่ window เหมือน paste ด้านบน ไม่ใช่แค่
+  // div เดียว เพราะถ้าปล่อยเมาส์พลาดขอบ div ไปนิดเดียว เบราว์เซอร์จะ default ไปเปิดรูปเป็นแท็บใหม่
+  // แทน (ต้อง preventDefault ทั้ง dragover/drop ระดับ window กันไว้ ไม่งั้นหลุด target ไม่ได้)
+  const [ocrDragActive, setOcrDragActive] = useState(false)
+  useEffect(() => {
+    if (!ocrTestOpen) return
+    const onDragOver = (e) => { e.preventDefault(); setOcrDragActive(true) }
+    const onDragLeave = (e) => {
+      e.preventDefault()
+      // dragleave ยิงตอนย้ายผ่าน element ลูกด้วย เช็ค relatedTarget กันกระพริบ — ถ้าออกจากหน้าต่างจริง
+      // relatedTarget จะเป็น null
+      if (!e.relatedTarget) setOcrDragActive(false)
+    }
+    const onDrop = (e) => {
+      e.preventDefault()
+      setOcrDragActive(false)
+      addOcrFiles(e.dataTransfer?.files)
+    }
+    window.addEventListener('dragover', onDragOver)
+    window.addEventListener('dragleave', onDragLeave)
+    window.addEventListener('drop', onDrop)
+    return () => {
+      window.removeEventListener('dragover', onDragOver)
+      window.removeEventListener('dragleave', onDragLeave)
+      window.removeEventListener('drop', onDrop)
+    }
+  }, [ocrTestOpen, ocrTestType, ocrLedgerMode])
+
+  const handleOcrRemoveImage = (idx) => {
+    setOcrTestImages((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  const ocrCountValid = (() => {
+    if (ocrTestType === 'payment') return ocrTestImages.length === 2
+    if (ocrTestType === 'receipt') return ocrTestImages.length >= 1 && ocrTestImages.length <= 10
+    // ledger — ต้องเลือกกลุ่มก่อนเสมอ ไม่งั้นไม่รู้จะอ่านยอดปัจจุบันของใครมาคำนวณ
+    if (!ocrLedgerGroupId) return false
+    return ocrLedgerMode === 'slip'
+      ? ocrTestImages.length >= 1 && ocrTestImages.length <= 2
+      : ocrTestImages.length === 1
+  })()
+
+  // แปลง (ocrTestType, ocrLedgerMode) เป็น type string ที่ backend /test-ocr เข้าใจ
+  const resolveOcrBackendType = () => {
+    if (ocrTestType !== 'ledger') return ocrTestType
+    return ocrLedgerMode === 'slip' ? 'ledger-slip' : 'ledger-book'
+  }
+
+  const handleOcrTestSubmit = async () => {
+    if (!ocrCountValid || aiThinking) return
+    const typeLabel = ocrTestType === 'payment' ? 'ตรวจสอบการโอน-ตั้งเบิก'
+      : ocrTestType === 'receipt' ? 'สรุปใบเสร็จ'
+      : ocrLedgerMode === 'slip' ? 'เช็คยอดสมุดบัญชี (สลิปโอนเงิน)' : 'เช็คยอดสมุดบัญชี (เช็คสมุด)'
+    const displayText = `🧪 ทดสอบ OCR: ${typeLabel} (${ocrTestImages.length} รูป)`
+    const imagesToSend = ocrTestImages.map((img) => img.dataUrl)
+    // แนบรูปไปกับ bubble ด้วย (ไม่ใช่แค่ข้อความ) จะได้เห็นว่าทดสอบด้วยรูปไหนไปบ้าง — เป็น local state
+    // ล้วนๆ เหมือน aiMessages ทั้งก้อน หายไปเองตอนรีเฟรช/ออกจากห้อง ไม่ได้บันทึกลง DB อยู่แล้ว
+    setAiMessages((prev) => [...prev, { role: 'user', text: displayText, images: imagesToSend }])
+    setOcrTestOpen(false)
+    resetOcrTest()
+    setAiThinking(true)
+    try {
+      const result = await onTestOcr?.(resolveOcrBackendType(), imagesToSend, ocrTestType === 'ledger' ? ocrLedgerGroupId : undefined)
+      const modelSuffix = result?.model ? `\n\n🔧 model: ${result.model}` : ''
+      setAiMessages((prev) => [...prev, { role: 'ai', text: (result?.reply || '(ไม่มีคำตอบ)') + modelSuffix }])
+    } catch (e) {
+      setAiMessages((prev) => [...prev, { role: 'ai', text: '❌ ' + e.message }])
+    } finally {
+      setAiThinking(false)
     }
   }
 
@@ -361,13 +525,14 @@ export default function ChatWindow({
       if (forwardOpen) { if (!forwarding) closeForwardPicker(); return }
       if (sendConfirmOpen) { if (!sending) closeSendConfirm(); return }
       if (dbSearchOpen) { setDbSearchOpen(false); setDbSearchText(''); return }
+      if (ocrTestOpen) { setOcrTestOpen(false); resetOcrTest(); return }
       if (showGallery) { setShowGallery(false); return }
       if (showImportant) { setShowImportant(false); return }
       if (selectMode) { setSelectMode(false); setSelectedIds(new Set()); return }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [confirmDeleteOpen, deleting, forwardOpen, forwarding, sendConfirmOpen, sending, dbSearchOpen, showGallery, showImportant, selectMode])
+  }, [confirmDeleteOpen, deleting, forwardOpen, forwarding, sendConfirmOpen, sending, dbSearchOpen, ocrTestOpen, showGallery, showImportant, selectMode])
 
   const toggleSelectMode = () => {
     setSelectMode((v) => !v)
@@ -635,7 +800,7 @@ export default function ChatWindow({
 
       {currentGroup?.isAiAssistant ? (
         <div className="chat-body">
-          <div className="messages ai-assistant-messages">
+          <div className={`messages ai-assistant-messages${ocrTestOpen && ocrDragActive ? ' drag-active' : ''}`}>
             {aiMessages.length === 0 && (
               <div className="empty">
                 <p>คุยกับ AI ผู้ช่วยได้เลย ถามอะไรก็ได้</p>
@@ -643,9 +808,37 @@ export default function ChatWindow({
               </div>
             )}
             {aiMessages.map((m, i) => (
-              <div key={i} className={`ai-msg ai-msg--${m.role}`}>{linkifyText(m.text, onJumpToMessage, onJumpToMessageDirect)}</div>
+              <div key={i} className={`ai-msg ai-msg--${m.role}`}>
+                {m.images?.length > 0 && (
+                  <div className="ai-msg-images">
+                    {m.images.map((src, j) => <img key={j} src={src} alt={`รูปทดสอบ ${j + 1}`} />)}
+                  </div>
+                )}
+                {linkifyText(m.text, onJumpToMessage, onJumpToMessageDirect)}
+              </div>
             ))}
             {aiThinking && <div className="ai-msg ai-msg--ai ai-msg--thinking">กำลังคิด...</div>}
+            {ocrTestOpen && ocrTestImages.length === 0 && (
+              <div className="ocr-drop-hint">📥 ลากรูปมาวางตรงนี้ได้เลย หรือ Ctrl+V เพื่อวาง</div>
+            )}
+            {/* พรีวิวรูปที่แนบไว้แล้วแต่ยังไม่กดทดสอบ — โชว์ในกระทู้แชททันทีที่ paste/drop/เลือกไฟล์
+                เพื่อให้เห็นชัดว่ารับรูปแล้วจริง ไม่ต้องกดทดสอบก่อนถึงจะเห็น (เดิมเห็นแค่ thumbnail
+                เล็กๆ ใน compose bar ด้านล่าง คนมองข้ามได้ง่าย) */}
+            {ocrTestOpen && ocrTestImages.length > 0 && (
+              <div className="ai-msg ai-msg--user ai-msg--pending">
+                <div className="ai-msg-images">
+                  {ocrTestImages.map((img, i) => (
+                    <div key={i} className="ai-msg-image-pending">
+                      <img src={img.dataUrl} alt={img.name} />
+                      <button type="button" onClick={() => handleOcrRemoveImage(i)}>×</button>
+                    </div>
+                  ))}
+                </div>
+                <span className="ocr-pending-label">
+                  แนบแล้ว {ocrTestImages.length}/{getOcrMaxImages()} รูป — กด "ทดสอบ OCR" ด้านล่างเมื่อครบ
+                </span>
+              </div>
+            )}
           </div>
         </div>
       ) : (
@@ -864,7 +1057,106 @@ export default function ChatWindow({
               🔍 ค้นหาDB
             </button>
           )}
-          {currentGroup?.isAiAssistant && dbSearchOpen ? (
+          {currentGroup?.isAiAssistant && canTestOcr && (
+            <button
+              type="button"
+              className={`btn-db-search-toggle${ocrTestOpen ? ' active' : ''}`}
+              onClick={handleOcrTestToggle}
+              title="ทดสอบ OCR จากรูปที่อัปโหลด (ไม่ผ่าน LINE, ไม่บันทึกลง DB)"
+            >
+              🧪 ทดสอบ OCR
+            </button>
+          )}
+          {currentGroup?.isAiAssistant && ocrTestOpen ? (
+            <div className="ocr-test-panel">
+              {/* จุดวางรูปหลักคือพื้นที่แชทด้านบน (ใหญ่กว่า เห็นชัดกว่า) — ดู .ai-assistant-messages
+                  ที่มี onDrop/onDragOver ผูกไว้ตอน ocrTestOpen เป็น true เหมือนกัน */}
+              <div className="ocr-test-type-row">
+                <button
+                  type="button"
+                  className={`btn-ocr-type${ocrTestType === 'payment' ? ' active' : ''}`}
+                  onClick={() => handleOcrTypeChange('payment')}
+                >
+                  💳 ตรวจสอบการโอน-ตั้งเบิก (2 รูป)
+                </button>
+                <button
+                  type="button"
+                  className={`btn-ocr-type${ocrTestType === 'receipt' ? ' active' : ''}`}
+                  onClick={() => handleOcrTypeChange('receipt')}
+                >
+                  🧾 สรุปใบเสร็จ (1-10 รูป)
+                </button>
+                <button
+                  type="button"
+                  className={`btn-ocr-type${ocrTestType === 'ledger' ? ' active' : ''}`}
+                  onClick={() => handleOcrTypeChange('ledger')}
+                >
+                  📖 เช็คยอดสมุดบัญชี
+                </button>
+                <span className="ocr-test-hint">วางรูป (Ctrl+V) หรือลากมาวางได้เลย</span>
+              </div>
+              {ocrTestType === 'ledger' && (
+                <div className="ocr-test-type-row">
+                  <select
+                    className="ocr-ledger-group-select"
+                    value={ocrLedgerGroupId}
+                    onChange={(e) => setOcrLedgerGroupId(e.target.value)}
+                  >
+                    <option value="">
+                      {ocrLedgerAccountsLoading ? 'กำลังโหลดกลุ่ม...' : '— เลือกกลุ่ม/บริษัท —'}
+                    </option>
+                    {ocrLedgerAccounts.map((acc) => (
+                      <option key={acc.groupId} value={acc.groupId}>
+                        {acc.groupName} (ยอดปัจจุบัน {acc.latestBalance != null ? Number(acc.latestBalance).toLocaleString('th-TH') : '—'})
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    className={`btn-ocr-type${ocrLedgerMode === 'slip' ? ' active' : ''}`}
+                    onClick={() => handleOcrLedgerModeChange('slip')}
+                  >
+                    💸 สลิปโอนเงิน (1-2 รูป)
+                  </button>
+                  <button
+                    type="button"
+                    className={`btn-ocr-type${ocrLedgerMode === 'book' ? ' active' : ''}`}
+                    onClick={() => handleOcrLedgerModeChange('book')}
+                  >
+                    📔 เช็คสมุด (1 รูป)
+                  </button>
+                </div>
+              )}
+              <div className="ocr-test-images-row">
+                {ocrTestImages.map((img, i) => (
+                  <div key={i} className="ocr-test-thumb">
+                    <img src={img.dataUrl} alt={img.name} />
+                    <button type="button" className="ocr-test-thumb-remove" onClick={() => handleOcrRemoveImage(i)}>×</button>
+                  </div>
+                ))}
+                {ocrTestImages.length < getOcrMaxImages() && (
+                  <button type="button" className="btn-ocr-add" onClick={() => ocrFileInputRef.current?.click()}>
+                    📎 เพิ่มรูป
+                  </button>
+                )}
+                <input
+                  ref={ocrFileInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  style={{ display: 'none' }}
+                  onChange={handleOcrFilesSelected}
+                />
+              </div>
+              <button
+                className="btn-compose-send"
+                disabled={!ocrCountValid || aiThinking}
+                onClick={handleOcrTestSubmit}
+              >
+                ทดสอบ OCR
+              </button>
+            </div>
+          ) : currentGroup?.isAiAssistant && dbSearchOpen ? (
             <>
               <input
                 ref={dbSearchInputRef}
@@ -886,7 +1178,7 @@ export default function ChatWindow({
             <>
               <textarea
                 className="compose-input"
-                placeholder={currentGroup?.isAiAssistant ? 'คุยกับ AI ผู้ช่วยได้เลย...' : 'พิมพ์ข้อความส่งเข้าห้องนี้ หรือ "ค้นหา ชื่อไฟล์" / "สรุปเลย"...'}
+                placeholder={currentGroup?.isAiAssistant ? 'คุยกับ AI ผู้ช่วยได้เลย... (พิมพ์ "showfeature" เพื่อดูคำสั่งทั้งหมด)' : 'พิมพ์ข้อความส่งเข้าห้องนี้ หรือ "ค้นหา ชื่อไฟล์" / "สรุปเลย"...'}
                 rows={1}
                 value={composeText}
                 onChange={(e) => setComposeText(e.target.value)}

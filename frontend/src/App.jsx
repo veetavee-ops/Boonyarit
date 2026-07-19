@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { checkAuth, logout, updateProfile } from "./api/auth";
 import { useGroups, useMessages } from "./hooks/useMessages";
 import { useSocket } from "./hooks/useSocket";
-import { summarizeDay, searchMessages, toggleImportant, deleteMessages, forwardMessages, sendDirectMessage, askAssistant, checkCommand } from "./api/messages";
+import { summarizeDay, searchMessages, toggleImportant, deleteMessages, forwardMessages, sendDirectMessage, askAssistant, checkCommand, testOcr } from "./api/messages";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
@@ -134,6 +134,12 @@ export default function App() {
   // ถาม AI ผู้ช่วยผ่าน dashboard โดยตรง — เรียกจาก ChatWindow ตอนพิมพ์ใน DM "AI ผู้ช่วย"
   const handleAskAssistant = async (text) => {
     return await askAssistant(text);
+  };
+
+  // ทดสอบ OCR (ตรวจสอบการโอน/สรุปใบเสร็จ) ผ่าน dashboard โดยตรง ไม่ผ่าน LINE — เรียกจาก ChatWindow
+  // ตอนอัปโหลดรูปทดสอบใน DM "AI ผู้ช่วย"
+  const handleTestOcr = async (type, images, groupId) => {
+    return await testOcr({ type, images, groupId });
   };
 
   // เช็คว่าข้อความที่พิมพ์ในห้องแชทจริงตรงคำสั่ง "ค้นหา"/"สรุปเลย" ไหม — เรียกจาก ChatWindow ก่อนตัดสินใจ
@@ -453,6 +459,8 @@ export default function App() {
             canSendDirect={['superuser', 'admin'].includes(admin.role)}
             onSendDirectMessage={handleSendDirectMessage}
             onAskAssistant={handleAskAssistant}
+            canTestOcr={['superuser', 'admin'].includes(admin.role)}
+            onTestOcr={handleTestOcr}
             onCheckCommand={handleCheckCommand}
             onJumpToMessage={(groupId, messageId, highlight) => {
               setJumpMessageId(messageId);

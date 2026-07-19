@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const { Message, User, Group, AdminGroup } = require('../models/index');
+const { Message, User, Group, AdminGroup, LedgerBalanceEntry } = require('../models/index');
 
-const { summarizeAllChatsForDate, askQuestion } = require('../services/aiService');
+const { summarizeAllChatsForDate, askQuestion, extractPaymentDocuments, extractReceiptSummary, matchPaymentItems, extractTransferSlip, extractWrittenBalance } = require('../services/aiService');
 const { deleteFileFromDrive } = require('../services/driveService');
 const { deleteFromGCS, getSignedUrl } = require('../services/gcsService');
 const { client } = require('../services/lineService');
-const { getSearchKeyword, getSummarizeKeyword, escapeRegex, matchSummarizeCommand, buildSearchReply, buildSummarizeReply, resolveProviderChain } = require('../services/botCommandService');
+const { getSearchKeyword, getSummarizeKeyword, escapeRegex, matchSummarizeCommand, buildSearchReply, buildSummarizeReply, resolveProviderChain, resolveVisionProviderChain, buildPaymentVerifyReply, buildReceiptSummaryReply, buildLedgerBalanceReply, buildWrittenBalanceCheckReply } = require('../services/botCommandService');
 const { Op } = require('sequelize');
 const authMiddleware = require('../middleware/auth');
 const { requireAdmin } = require('../middleware/auth');
@@ -332,6 +332,28 @@ router.post('/send', requireAdmin, async (req, res) => {
   }
 });
 
+// ข้อความช่วยเหลือคำสั่ง "showfeature" — DM "AI ผู้ช่วย" เท่านั้น ไม่ผ่าน LINE, static ล้วนๆ ไม่เรียก LLM
+// ใช้คำภาษาอังกฤษคำเดียวติดกัน (ไม่ใช่ "feature" เฉยๆ) เพื่อกันชนกับคำถามทั่วไปที่มีคำว่า feature ปนอยู่
+const FEATURE_HELP_TEXT = `📋 ฟีเจอร์ในกล่อง "AI ผู้ช่วย" นี้ มี 3 โหมด:
+
+💬 คุยกับ AI ธรรมดา — พิมพ์คุยแบบ free-form ได้เลย ไม่ผูกคำสั่งตายตัว
+
+🔍 ค้นหาDB — ค้นข้อความ/ไฟล์ข้ามทุกกลุ่ม/DM ทั้งระบบ
+
+🧪 ทดสอบ OCR — ทดสอบฟีเจอร์ตรวจสอบการโอน (2 รูป) / สรุปใบเสร็จ (1-10 รูป) โดยอัปโหลดรูปตรงจาก dashboard ไม่ผ่าน LINE ไม่บันทึกลง DB
+
+━━━━━━━━━━━━━━━
+
+📋 ฟีเจอร์ OCR ที่ใช้งานจริงผ่าน LINE (แยกจากกล่องนี้ ต้องเปิดธงกลุ่มก่อนใน Dashboard):
+
+💳 ตรวจสอบการโอน-ตั้งเบิก — ส่งรายงานตั้งเบิก + สกรีนธนาคาร 2 รูป เทียบยอดให้อัตโนมัติ
+
+🧾 สรุปบิลซื้อของ — พิมพ์คำสั่งเปิด แล้วส่งรูปใบเสร็จ (สูงสุด 10 รูป) สรุปให้เป็นข้อความ
+
+📖 เช็คยอดสมุดบัญชี (ยืม-คืนเงิน) — ส่งสลิปโอนเงิน 1-2 รูป ระบบคำนวณยอดคงเหลือต่อเนื่องให้เอง (จำยอดเอง ไม่อ่านจากรูปสมุดใหม่ทุกครั้ง) พิมพ์ "เช็คสมุด" + แนบรูปหน้าสมุด เพื่อตั้งยอดเริ่มต้นหรือเทียบยอดกับที่เขียนจริง
+
+พิมพ์ "showfeature" เพื่อดูข้อความนี้อีกครั้งได้ทุกเมื่อ`;
+
 // POST /api/messages/ask — คุยกับ AI ผู้ช่วยแบบ free-form ผ่าน dashboard (ไม่ผ่าน LINE เลย)
 // ใช้กับ DM พิเศษ "AI ผู้ช่วย" เท่านั้น — ไม่ผูกคำสั่งตายตัว ถามอะไรก็ได้ ไม่บันทึกบทสนทนานี้ลง DB
 // body: { text }
@@ -343,6 +365,11 @@ router.post('/ask', async (req, res) => {
     }
 
     const trimmedText = text.trim();
+
+    // "showfeature" ดักก่อนทุกอย่าง — static help text ไม่ต้องเรียก LLM (case-insensitive กันพิมพ์ตัวใหญ่/เล็กปน)
+    if (trimmedText.toLowerCase() === 'showfeature') {
+      return res.json({ reply: FEATURE_HELP_TEXT });
+    }
 
     // "ค้นหาDB xxxx" ดักก่อนส่งเข้า LLM แบบ free-form — ค้นข้อมูลในระบบจริง ไม่ใช่ถาม AI
     const searchDbMatch = trimmedText.match(searchDbPattern);
@@ -358,6 +385,125 @@ router.post('/ask', async (req, res) => {
     res.json({ reply: result.text });
   } catch (error) {
     console.error('[ERROR] POST /api/messages/ask:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// POST /api/messages/test-ocr — ทดสอบ OCR จากรูปอัปโหลดตรงจาก dashboard, ไม่ผ่าน LINE
+// เรียก pipeline เดียวกับ LINE จริงทุกขั้นตอน (resolveVisionProviderChain → extract*() →
+// matchPaymentItems() → buildPaymentVerifyReply()/buildReceiptSummaryReply()) แต่ข้าม
+// ทุกขั้นตอนที่มีผลข้างเคียง (ไม่มี PaymentVerification.create, uploadToGCS, ledger sync)
+// เฉพาะ superuser/admin — error คืนเป็นข้อความจริงจาก exception แทนข้อความทั่วไปแบบ LINE
+// เพราะจุดประสงค์คือ debug ปัญหา vision-provider ตรงๆ
+//
+// type 'ledger-slip'/'ledger-book' (ฟีเจอร์ "เช็คยอดสมุดบัญชี") ต้องมี groupId เพิ่ม — อ่านยอด
+// ปัจจุบันจริงของกลุ่มนั้น (read-only) มาคำนวณ preview เฉยๆ ไม่มี LedgerBalanceEntry.create เด็ดขาด
+// เพราะยอดจริงต้องมาจาก LINE เท่านั้น (ระบบจำยอดต่อเนื่อง พลาดจากการทดสอบไม่ได้)
+//
+// body: { type: 'payment'|'receipt'|'ledger-slip'|'ledger-book', images: string[], groupId?: string }
+router.post('/test-ocr', requireAdmin, async (req, res) => {
+  try {
+    const { type, images, groupId } = req.body;
+    const VALID_TYPES = ['payment', 'receipt', 'ledger-slip', 'ledger-book'];
+    if (!VALID_TYPES.includes(type)) {
+      return res.status(400).json({ error: `type ต้องเป็นหนึ่งใน ${VALID_TYPES.join(', ')}` });
+    }
+    if (!Array.isArray(images) || images.length === 0) {
+      return res.status(400).json({ error: 'images required (array ของ data URL)' });
+    }
+    if (type === 'payment' && images.length !== 2) {
+      return res.status(400).json({ error: `ตรวจสอบการโอน-ตั้งเบิกต้องอัปโหลดรูปพอดี 2 รูป (ได้รับ ${images.length} รูป)` });
+    }
+    if (type === 'receipt' && (images.length < 1 || images.length > 10)) {
+      return res.status(400).json({ error: `สรุปใบเสร็จต้องอัปโหลด 1-10 รูป (ได้รับ ${images.length} รูป)` });
+    }
+    if (type === 'ledger-slip' && (images.length < 1 || images.length > 2)) {
+      return res.status(400).json({ error: `สลิปโอนเงินต้องอัปโหลด 1-2 รูป (ได้รับ ${images.length} รูป)` });
+    }
+    if (type === 'ledger-book' && images.length !== 1) {
+      return res.status(400).json({ error: `รูปสมุดบัญชีต้องอัปโหลดพอดี 1 รูป (ได้รับ ${images.length} รูป)` });
+    }
+    if ((type === 'ledger-slip' || type === 'ledger-book') && !groupId) {
+      return res.status(400).json({ error: 'groupId required สำหรับทดสอบเช็คยอดสมุดบัญชี' });
+    }
+
+    const buffers = images.map((dataUrl, i) => {
+      const match = /^data:image\/\w+;base64,(.+)$/.exec(dataUrl || '');
+      if (!match) throw new Error(`รูปที่ ${i + 1} ไม่ใช่ base64 data URL ที่ถูกต้อง`);
+      return Buffer.from(match[1], 'base64');
+    });
+
+    const visionChain = await resolveVisionProviderChain();
+
+    if (type === 'payment') {
+      const extracted = await extractPaymentDocuments(buffers[0], buffers[1], visionChain);
+      const { matchResults, overallStatus } = matchPaymentItems(extracted.reportItems, extracted.bankItems);
+      return res.json({ reply: buildPaymentVerifyReply(extracted, matchResults, overallStatus), model: extracted.model });
+    }
+
+    if (type === 'receipt') {
+      const extracted = await extractReceiptSummary(buffers, visionChain);
+      return res.json({ reply: buildReceiptSummaryReply(extracted), model: extracted.model });
+    }
+
+    if (type === 'ledger-slip') {
+      const group = await Group.findByPk(groupId);
+      const referenceName = (group?.ledgerReferenceName || '').trim();
+      if (!referenceName) {
+        return res.status(400).json({ error: 'กลุ่มนี้ยังไม่ได้ตั้งค่า "ชื่ออ้างอิง" — ไปตั้งค่าที่ AdminPanel ก่อน' });
+      }
+
+      const extracted = await extractTransferSlip(buffers, visionChain, referenceName);
+      if (!extracted.direction) {
+        return res.json({
+          reply: `⚠️ (ทดสอบ) ไม่สามารถระบุทิศทางเงิน (ยืม/คืน) ได้จากสลิปนี้ครับ${extracted.note ? '\n' + extracted.note : ''}`,
+          model: extracted.model,
+          extracted,
+        });
+      }
+
+      const latestEntry = await LedgerBalanceEntry.findOne({ where: { groupId }, order: [['submittedAt', 'DESC']] });
+      if (!latestEntry) {
+        return res.json({
+          reply: '⚠️ (ทดสอบ) กลุ่มนี้ยังไม่มียอดตั้งต้นเลยในระบบ — ต้องทดสอบโหมด "เช็คสมุด" ก่อนถึงจะมียอดให้คำนวณต่อได้',
+          model: extracted.model,
+          extracted,
+        });
+      }
+
+      const previousBalance = Number(latestEntry.calculatedBalance);
+      const calculatedBalance = extracted.direction === 'in'
+        ? previousBalance + extracted.amount
+        : previousBalance - extracted.amount;
+      const previewEntry = { direction: extracted.direction, amount: extracted.amount, previousBalance, calculatedBalance };
+      return res.json({
+        reply: buildLedgerBalanceReply(previewEntry) + '\n\n🧪 โหมดทดสอบ — ไม่ได้บันทึกยอดนี้ลงระบบจริง',
+        model: extracted.model,
+        extracted,
+      });
+    }
+
+    // type === 'ledger-book'
+    const extracted = await extractWrittenBalance(buffers[0], visionChain);
+    const latestEntry = await LedgerBalanceEntry.findOne({ where: { groupId }, order: [['submittedAt', 'DESC']] });
+    if (!latestEntry) {
+      const balanceText = Number(extracted.balance).toLocaleString('th-TH', { minimumFractionDigits: 2 });
+      return res.json({
+        reply: `✅ (ทดสอบ) ถ้าส่งรูปนี้จริง จะถูกใช้ตั้งยอดเริ่มต้นเป็น ${balanceText} บาท (กลุ่มนี้ยังไม่มีรายการใดเลยในระบบ)\n\n🧪 โหมดทดสอบ — ไม่ได้บันทึกจริง`,
+        model: extracted.model,
+        extracted,
+      });
+    }
+
+    const matches = Math.abs(Number(latestEntry.calculatedBalance) - extracted.balance) < 0.01;
+    const previewEntry = { calculatedBalance: latestEntry.calculatedBalance, writtenBalanceExtracted: extracted.balance, matchesWrittenBalance: matches };
+    return res.json({
+      reply: buildWrittenBalanceCheckReply(previewEntry) + '\n\n🧪 โหมดทดสอบ — ไม่ได้บันทึกจริง',
+      model: extracted.model,
+      extracted,
+    });
+  } catch (error) {
+    console.error('[ERROR] POST /api/messages/test-ocr:', error.message);
     res.status(500).json({ error: error.message });
   }
 });
