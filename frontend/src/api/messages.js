@@ -230,6 +230,16 @@ export async function toggleImportant(messageId) {
   }
 }
 
+export async function updateMessageComment(messageId, comment) {
+  try {
+    const res = await axiosInstance.patch(`/api/messages/${messageId}/comment`, { comment })
+    return res.data
+  } catch (error) {
+    console.error('Error updating comment:', error)
+    throw new Error(error.response?.data?.error || 'Failed to update comment')
+  }
+}
+
 export async function fetchImportantMessages(groupId) {
   try {
     const params = groupId ? { groupId } : {}

@@ -130,6 +130,7 @@ export default function ChatWindow({
   searching,
   onSelectGroup,
   onToggleImportant,
+  onUpdateComment,
   myLineUserId,
   daysBack,
   onDaysBackChange,
@@ -578,6 +579,7 @@ export default function ChatWindow({
   }
 
   const prevGroupRef = useRef(currentGroup?.groupId)
+  const prevMessageCountRef = useRef(0)
 
   // ✅ Auto-scroll to bottom (only on initial load or new message)
   useEffect(() => {
@@ -588,10 +590,18 @@ export default function ChatWindow({
     if (isNewGroup) {
       prevScrollHeight.current = 0
       prevGroupRef.current = currentGroup?.groupId
+      prevMessageCountRef.current = 0
     }
 
     // Skip auto-scroll to bottom if we are just loading MORE older messages
     if (prevScrollHeight.current > 0) return
+
+    // แก้ field ของข้อความเดิม (★ สำคัญ, 💬 คอมเมนต์) เปลี่ยน reference ของ messages array แต่จำนวน
+    // ข้อความไม่ได้เพิ่มขึ้นจริง — ไม่ควรกระโดดไปล่างสุดถ้าไม่ใช่ข้อความใหม่เข้ามาจริงๆ (เดิม bug: ลบ
+    // คอมเมนต์แล้ว scroll วิ่งไปล่างสุดทุกครั้งทั้งที่ user อาจเลื่อนดูข้อความเก่าอยู่)
+    const countIncreased = messages.length > prevMessageCountRef.current
+    prevMessageCountRef.current = messages.length
+    if (!isNewGroup && !countIncreased) return
 
     // ถ้ามาจากลิงก์ผลค้นหา (กด "เข้าห้องแชทนี้เลย") แล้วยังไม่ได้เลื่อนไปหามัน — ข้าม auto-scroll ลงล่างสุด
     // ไปก่อน ให้ effect แยกด้านล่าง (jump-to-message) จัดการเลื่อน+ไฮไลต์แทน กันเลื่อน 2 ที่ชนกัน
@@ -890,6 +900,7 @@ export default function ChatWindow({
                   prevMsg={importantMessages[i - 1]}
                   allMessages={importantMessages}
                   onToggleImportant={handleToggleImportant}
+                  onUpdateComment={onUpdateComment}
                   myLineUserId={myLineUserId}
                 />
               ))
@@ -919,9 +930,11 @@ export default function ChatWindow({
                       <div className="search-result-text">
                         {r.text
                           ? highlightText(r.text, search.trim())
-                          : r.metadata?.fileName
-                            ? <span>📎 {highlightText(r.metadata.fileName, search.trim())}</span>
-                            : <span style={{ opacity: 0.5 }}>[ไฟล์/รูป]</span>
+                          : r.comment
+                            ? <span>💬 {highlightText(r.comment, search.trim())}</span>
+                            : r.metadata?.fileName
+                              ? <span>📎 {highlightText(r.metadata.fileName, search.trim())}</span>
+                              : <span style={{ opacity: 0.5 }}>[ไฟล์/รูป]</span>
                         }
                       </div>
                     </div>
@@ -986,6 +999,7 @@ export default function ChatWindow({
                   prevMsg={filtered[i - 1]}
                   allMessages={messages}
                   onToggleImportant={handleToggleImportant}
+                  onUpdateComment={onUpdateComment}
                   myLineUserId={myLineUserId}
                   selectMode={selectMode}
                   selected={selectedIds.has(msg.id)}

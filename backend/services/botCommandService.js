@@ -85,9 +85,14 @@ function wrapHighlight(text, keyword) {
     return safe.replace(new RegExp(escapeRegex(keyword), 'gi'), (match) => `**${match}**`);
 }
 
-// ค้นหาทั้งชื่อไฟล์และเนื้อหาข้อความ — scopeWhere: object เพิ่มเข้า where เพื่อจำกัดขอบเขต เช่น
-// { groupId } = กลุ่มเดียว, { groupId: { [Op.in]: groupIds } } = หลายกลุ่ม,
-// { userId, groupId: null } = DM เดียว, {} = ไม่จำกัด (ค้นหาทั้งระบบ)
+// ชื่อ/ไอคอนต่อ messageType — ใช้ตอนแสดงผลค้นหาที่แมตช์จาก comment (รูป/วิดีโอ/เสียง/ไฟล์ที่ไม่มีเนื้อหา
+// text ให้ค้น และข้อความที่เป็นลิงก์ซึ่งก็คอมเมนต์ได้เหมือนกัน)
+const MEDIA_TYPE_ICON = { image: '📷', video: '🎬', audio: '🎵', text: '🔗' };
+
+// ค้นหาทั้งชื่อไฟล์, เนื้อหาข้อความ, และคอมเมนต์ที่ user เพิ่มเองให้สื่อ (รูป/วิดีโอ/ไฟล์/เสียง) —
+// scopeWhere: object เพิ่มเข้า where เพื่อจำกัดขอบเขต เช่น { groupId } = กลุ่มเดียว,
+// { groupId: { [Op.in]: groupIds } } = หลายกลุ่ม, { userId, groupId: null } = DM เดียว,
+// {} = ไม่จำกัด (ค้นหาทั้งระบบ)
 async function buildSearchReply(keyword, scopeWhere = {}, scopeLabel = '') {
     const safeKeyword = keyword.replace(/'/g, "''");
 
@@ -96,6 +101,7 @@ async function buildSearchReply(keyword, scopeWhere = {}, scopeLabel = '') {
         [Op.or]: [
             { messageType: 'file', [Op.and]: [literal(`(metadata->>'fileName') ILIKE '%${safeKeyword}%'`)] },
             { messageType: 'text', text: { [Op.iLike]: `%${keyword}%` } },
+            { comment: { [Op.iLike]: `%${keyword}%` } },
         ],
     };
 
@@ -133,7 +139,18 @@ async function buildSearchReply(keyword, scopeWhere = {}, scopeLabel = '') {
         const directLink = `${baseUrl}/app-jump-direct?groupId=${encodeURIComponent(roomId)}&messageId=${msg.id}${highlightParam}`;
         const roomLine = `📂 [${groupName}](${directLink})  👤 ${sender}`;
 
-        if (msg.messageType === 'file') {
+        const commentMatched = msg.comment && msg.comment.toLowerCase().includes(keyword.toLowerCase());
+
+        if (commentMatched) {
+            // แมตช์จากคอมเมนต์ที่ user เพิ่มเองให้สื่อ (รูป/วิดีโอ/ไฟล์/เสียง/ลิงก์) — โชว์คอมเมนต์แทน
+            // เนื้อหาเดิม พร้อมไอคอนบอกประเภทสื่อ (แม้ text/ลิงก์ที่มี text อยู่แล้วก็ยังโชว์คอมเมนต์
+            // เพราะเป็นเหตุผลที่แมตช์จริงๆ)
+            const icon = MEDIA_TYPE_ICON[msg.messageType] || '📎';
+            const preview = wrapHighlight(buildPreviewSnippet(msg.comment, keyword, 150), keyword);
+            const jumpLink = `${baseUrl}/app-jump?groupId=${encodeURIComponent(roomId)}&messageId=${msg.id}${highlightParam}`;
+
+            reply += `${i + 1}. ${icon} คอมเมนต์: "${preview}"\n   ${roomLine}\n   📅 ${date}\n   🔗 [ดูตัวอย่างในป็อปอัพ](${jumpLink})\n\n`;
+        } else if (msg.messageType === 'file') {
             const meta = msg.metadata || {};
             const fileName = wrapHighlight(meta.fileName || '(ไม่ทราบชื่อ)', keyword);
             const fileLink = meta.driveFileId

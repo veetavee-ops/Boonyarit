@@ -37,6 +37,12 @@ const Message = sequelize.define('Message', {
         type: DataTypes.BOOLEAN,
         defaultValue: false,
         allowNull: false
+    },
+    // คอมเมนต์ที่ user เพิ่มเองให้สื่อ (รูป/วิดีโอ/ไฟล์/เสียง) — ช่วยค้นหาทีหลัง เพราะสื่อพวกนี้
+    // ไม่มีเนื้อหาข้อความให้ค้นแบบ text ปกติ
+    comment: {
+        type: DataTypes.TEXT,
+        allowNull: true
     }
 }, {
     tableName: 'messages',

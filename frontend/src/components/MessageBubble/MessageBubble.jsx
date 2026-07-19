@@ -1,11 +1,21 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { formatTime, getColor, formatFileSize } from "../../utils/helpers";
+import { fetchLinkPreview } from "../../api/linkPreview";
 import Avatar from "../Avatar/Avatar";
 import VoiceMessage from "./VoiceMessage";
 import FileIcon from "./FileIcon";
 import "./MessageBubble.css";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
+
+function mediaUrl(path) {
+  if (!path) return null;
+  if (path.startsWith("http")) return path;
+  return `${API_BASE}/api/media?path=${encodeURIComponent(path)}`;
+}
+
+// ประเภทข้อความที่เพิ่มคอมเมนต์ได้ — เฉพาะสื่อที่ไม่มีเนื้อหา text ให้ค้นหาแบบปกติ
+const MEDIA_COMMENT_TYPES = ["image", "video", "file", "audio"];
 
 // ─── File Accent Color (matches FileIcon brand colors) ─────────────────────────
 const FILE_ACCENT = {
@@ -190,6 +200,49 @@ function highlightKeywordInText(text, keyword, keyPrefix) {
   );
 }
 
+// ─── ดึงลิงก์ทั้งหมดในข้อความ (ไม่ซ้ำ) — ใช้โชว์การ์ด preview ใต้ข้อความ ──────
+function extractLinks(text) {
+  if (!text) return [];
+  const matches = text.match(/https?:\/\/[^\s<>"'[\]]+/g) || [];
+  const cleaned = matches.map((m) => m.replace(/[.,;:!?'")\]>]+$/, ""));
+  return [...new Set(cleaned)];
+}
+
+// ─── การ์ด preview ลิงก์ (thumbnail + title) เหมือนที่ LINE แอปจริงทำให้อัตโนมัติ ──
+// ดึงจาก /api/link-preview (backend fetch og: tag หรือ YouTube oEmbed ให้) — ถ้าไม่มี title/image
+// เลย (เว็บไซต์ไม่รองรับ หรือวิดีโอถูกลบ) จะไม่โชว์การ์ดอะไรเลย ปล่อยให้เป็นแค่ลิงก์ธรรมดา
+function LinkPreviewCard({ url, onOpen }) {
+  const [preview, setPreview] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchLinkPreview(url)
+      .then((data) => { if (!cancelled) setPreview(data); })
+      .catch(() => { if (!cancelled) setPreview(null); });
+    return () => { cancelled = true; };
+  }, [url]);
+
+  if (!preview || (!preview.image && !preview.title)) return null;
+
+  let hostname = url;
+  try { hostname = new URL(url).hostname; } catch { /* ignore */ }
+
+  return (
+    <div
+      className="link-preview-card"
+      onClick={(e) => { e.stopPropagation(); onOpen(url); }}
+    >
+      {preview.image && (
+        <img src={preview.image} alt="" className="link-preview-image" loading="lazy" />
+      )}
+      <div className="link-preview-body">
+        {preview.title && <div className="link-preview-title">{preview.title}</div>}
+        <div className="link-preview-site">{preview.siteName || hostname}</div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Parse text and linkify URLs ──────────────────────────────────────────────
 function parseTextWithLinks(text, onLinkClick, highlightKeyword) {
   const parts = text.split(/(https?:\/\/[^\s<>"'[\]]+)/g);
@@ -290,6 +343,62 @@ function LinkModal({ url, onClose }) {
         </div>
         <div className="link-modal-footer">
           <span className="link-modal-url-text">{url}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Comment Popover — คอมเมนต์สั้นๆ ให้สื่อ (ช่วยค้นหาทีหลัง) ─────────────────
+// Enter = บันทึกทันที, Escape = ปิดโดยไม่บันทึก (ปุ่ม/handler แยกจากกันชัดเจน กันกดพลาด)
+function CommentModal({ initialValue, onSave, onClose }) {
+  const [value, setValue] = useState(initialValue || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const fn = (e) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", fn);
+    return () => window.removeEventListener("keydown", fn);
+  }, [onClose]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      await onSave(value.trim());
+      onClose();
+    } catch (e) {
+      setError(e.message || "บันทึกไม่สำเร็จ");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="media-modal-overlay" onClick={onClose}>
+      <div className="comment-popover" onClick={(e) => e.stopPropagation()}>
+        <input
+          type="text"
+          className="comment-popover-input"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") { e.preventDefault(); handleSave(); }
+          }}
+          placeholder="คอมเมนต์สั้นๆ..."
+          maxLength={200}
+          autoFocus
+          disabled={saving}
+        />
+        {error && <p className="comment-modal-error">{error}</p>}
+        <div className="comment-popover-actions">
+          <button className="btn-cancel" onClick={onClose} disabled={saving}>ยกเลิก</button>
+          <button className="btn-confirm-delete" onClick={handleSave} disabled={saving}>
+            {saving ? "..." : "บันทึก"}
+          </button>
         </div>
       </div>
     </div>
@@ -484,19 +593,70 @@ function MediaModal({ media, onClose }) {
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImportant, myLineUserId, selectMode, selected, onToggleSelect, onContextMenuSelect, highlightKeyword }) {
+export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImportant, onUpdateComment, myLineUserId, selectMode, selected, onToggleSelect, onContextMenuSelect, highlightKeyword }) {
   const [lightboxImg, setLightboxImg] = useState(null);
   const [mediaModal, setMediaModal] = useState(null);
+  const [commentEditing, setCommentEditing] = useState(false);
+  const [commentDeleteConfirm, setCommentDeleteConfirm] = useState(false);
+  const [deletingComment, setDeletingComment] = useState(false);
   const [linkUrl, setLinkUrl] = useState(null);
+
+  // ลิงก์ทั้งหมดในข้อความนี้ (ถ้ามี) — ใช้ทั้งโชว์การ์ด preview และเช็คว่าเพิ่มคอมเมนต์ได้ไหม
+  // (ข้อความที่มีลิงก์ถือเป็น "สื่อ" ที่ควรคอมเมนต์ได้เหมือนรูป/วิดีโอ/ไฟล์/เสียง)
+  const msgLinks = useMemo(
+    () => (msg.messageType === "text" ? extractLinks(msg.text) : []),
+    [msg.messageType, msg.text],
+  );
+  const canComment = MEDIA_COMMENT_TYPES.includes(msg.messageType) || msgLinks.length > 0;
+
+  // รายชื่อ url รูปทั้งหมดในแชทนี้ เรียงตามลำดับเดียวกับที่แสดงในหน้าจอ — ใช้เลื่อนดูรูปก่อนหน้า/
+  // ถัดไปข้ามบับเบิลได้ต่อเนื่อง ไม่ใช่แค่ในบับเบิลเดียวกัน
+  const allImageUrls = useMemo(() => {
+    if (!allMessages) return [];
+    const urls = [];
+    for (const m of allMessages) {
+      if (m.messageType !== "image") continue;
+      const paths = m.metadata?.gcsPaths || m.metadata?.localPaths || [];
+      for (const p of paths) {
+        const u = mediaUrl(p);
+        if (u) urls.push(u);
+      }
+    }
+    return urls;
+  }, [allMessages]);
+
+  const resetLightboxZoom = useCallback(() => {
+    const imgEl = document.querySelector(".lightbox-img");
+    if (!imgEl) return;
+    imgEl.dataset.zoom = "1";
+    imgEl.dataset.panX = "0";
+    imgEl.dataset.panY = "0";
+    imgEl.style.transform = "scale(1) translate(0px, 0px)";
+    const display = document.querySelector(".lightbox-zoom-level");
+    if (display) display.textContent = "100%";
+  }, []);
+
+  const goToImageOffset = useCallback((delta) => {
+    setLightboxImg((current) => {
+      if (allImageUrls.length === 0) return current;
+      const idx = allImageUrls.indexOf(current);
+      if (idx === -1) return current;
+      const nextIdx = (idx + delta + allImageUrls.length) % allImageUrls.length;
+      return allImageUrls[nextIdx];
+    });
+    resetLightboxZoom();
+  }, [allImageUrls, resetLightboxZoom]);
 
   useEffect(() => {
     if (!lightboxImg) return;
     const fn = (e) => {
       if (e.key === "Escape") setLightboxImg(null);
+      else if (e.key === "ArrowLeft") goToImageOffset(-1);
+      else if (e.key === "ArrowRight") goToImageOffset(1);
     };
     window.addEventListener("keydown", fn);
     return () => window.removeEventListener("keydown", fn);
-  }, [lightboxImg]);
+  }, [lightboxImg, goToImageOffset]);
 
   const openLightbox = useCallback((url) => setLightboxImg(url), []);
   const closeLightbox = useCallback(() => setLightboxImg(null), []);
@@ -559,12 +719,6 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
     !isNewSender &&
     prevMsg &&
     getMinute(msg.timestamp) !== getMinute(prevMsg.timestamp);
-
-  const mediaUrl = (path) => {
-    if (!path) return null;
-    if (path.startsWith("http")) return path;
-    return `${API_BASE}/api/media?path=${encodeURIComponent(path)}`;
-  };
 
   return (
     <>
@@ -708,11 +862,16 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
                 })()}
               {/* ── TEXT (only when NOT a reply) ── */}
               {msg.messageType === "text" && !quotedMessage && (
-                <div className="msg-text">
-                  {msg.text
-                    ? parseTextWithLinks(msg.text, openLink, highlightKeyword)
-                    : "(ไม่มีข้อความ)"}
-                </div>
+                <>
+                  <div className="msg-text">
+                    {msg.text
+                      ? parseTextWithLinks(msg.text, openLink, highlightKeyword)
+                      : "(ไม่มีข้อความ)"}
+                  </div>
+                  {msgLinks.map((url) => (
+                    <LinkPreviewCard key={url} url={url} onOpen={openLink} />
+                  ))}
+                </>
               )}
 
               {/* ── IMAGES (disk storage: metadata.localPaths) ── */}
@@ -932,6 +1091,20 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
             </div>
             {/* end msg-bubble-content */}
 
+            {canComment && msg.comment && (
+              <div
+                className="msg-comment-caption"
+                title="คลิกขวาเพื่อลบคอมเมนต์"
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setCommentDeleteConfirm(true);
+                }}
+              >
+                💬 {msg.comment}
+              </div>
+            )}
+
             <span className="msg-time-bubble">{formatTime(msg.timestamp)}</span>
             {onToggleImportant && (
               <button
@@ -942,6 +1115,18 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
               >
                 <svg viewBox="0 0 24 24" width="14" height="14" fill={msg.isImportant ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
                   <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+              </button>
+            )}
+            {onUpdateComment && canComment && (
+              <button
+                className={`msg-comment-btn${msg.comment ? " msg-comment-btn--active" : ""}`}
+                onClick={(e) => { e.stopPropagation(); setCommentEditing(true); }}
+                title={msg.comment ? "แก้ไขคอมเมนต์" : "เพิ่มคอมเมนต์ (ช่วยค้นหาทีหลัง)"}
+                aria-label={msg.comment ? "แก้ไขคอมเมนต์" : "เพิ่มคอมเมนต์"}
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" fill={msg.comment ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2">
+                  <path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z" />
                 </svg>
               </button>
             )}
@@ -968,16 +1153,7 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
             if (display) display.textContent = `${Math.round(newScale * 100)}%`;
           };
 
-          const handleReset = () => {
-            const imgEl = document.querySelector(".lightbox-img");
-            if (!imgEl) return;
-            imgEl.dataset.zoom = "1";
-            imgEl.dataset.panX = "0";
-            imgEl.dataset.panY = "0";
-            imgEl.style.transform = "scale(1) translate(0px, 0px)";
-            const display = document.querySelector(".lightbox-zoom-level");
-            if (display) display.textContent = "100%";
-          };
+          const handleReset = resetLightboxZoom;
 
           const handleMouseDown = (e) => {
             if (e.button !== 0) return;
@@ -1027,57 +1203,6 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
                 </svg>
               </button>
 
-              {/* Zoom controls */}
-              <div
-                className="lightbox-controls"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <button
-                  className="lightbox-btn"
-                  onClick={() => handleZoomBtn(-1)}
-                  aria-label="Zoom out"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="16"
-                    height="16"
-                  >
-                    <path d="M19 13H5v-2h14v2z" />
-                  </svg>
-                </button>
-                <span className="lightbox-zoom-level">100%</span>
-                <button
-                  className="lightbox-btn"
-                  onClick={() => handleZoomBtn(1)}
-                  aria-label="Zoom in"
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="16"
-                    height="16"
-                  >
-                    <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                  </svg>
-                </button>
-                <button
-                  className="lightbox-btn"
-                  onClick={handleReset}
-                  aria-label="Reset zoom"
-                  style={{ marginLeft: 4 }}
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    width="14"
-                    height="14"
-                  >
-                    <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
-                  </svg>
-                </button>
-              </div>
-
               {/* Image */}
               <img
                 className="lightbox-img"
@@ -1090,6 +1215,84 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
                 onDoubleClick={handleReset}
                 onMouseDown={handleMouseDown}
               />
+
+              {/* แถบล่าง — เลื่อนก่อนหน้า/ถัดไปหนีบซ้าย-ขวาช่อง zoom ไว้ในแถวเดียวกัน */}
+              <div
+                className="lightbox-bottom-bar"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {allImageUrls.length > 1 && (
+                  <button
+                    className="lightbox-nav"
+                    onClick={() => goToImageOffset(-1)}
+                    aria-label="รูปก่อนหน้า"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                      <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+                    </svg>
+                  </button>
+                )}
+
+                {/* Zoom controls */}
+                <div className="lightbox-controls">
+                  <button
+                    className="lightbox-btn"
+                    onClick={() => handleZoomBtn(-1)}
+                    aria-label="Zoom out"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      width="16"
+                      height="16"
+                    >
+                      <path d="M19 13H5v-2h14v2z" />
+                    </svg>
+                  </button>
+                  <span className="lightbox-zoom-level">100%</span>
+                  <button
+                    className="lightbox-btn"
+                    onClick={() => handleZoomBtn(1)}
+                    aria-label="Zoom in"
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      width="16"
+                      height="16"
+                    >
+                      <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                    </svg>
+                  </button>
+                  <button
+                    className="lightbox-btn"
+                    onClick={handleReset}
+                    aria-label="Reset zoom"
+                    style={{ marginLeft: 4 }}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      width="14"
+                      height="14"
+                    >
+                      <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
+                    </svg>
+                  </button>
+                </div>
+
+                {allImageUrls.length > 1 && (
+                  <button
+                    className="lightbox-nav"
+                    onClick={() => goToImageOffset(1)}
+                    aria-label="รูปถัดไป"
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" width="20" height="20">
+                      <path d="M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z" />
+                    </svg>
+                  </button>
+                )}
+              </div>
             </div>
           );
         })()}
@@ -1099,6 +1302,48 @@ export default function MessageBubble({ msg, prevMsg, allMessages, onToggleImpor
 
       {/* ✅ Link Preview Modal */}
       {linkUrl && <LinkModal url={linkUrl} onClose={() => setLinkUrl(null)} />}
+
+      {/* ✅ Comment Modal */}
+      {commentEditing && (
+        <CommentModal
+          initialValue={msg.comment}
+          onSave={(value) => onUpdateComment(msg.messageId, value)}
+          onClose={() => setCommentEditing(false)}
+        />
+      )}
+
+      {/* ✅ Comment Delete Confirm — เหมือน confirm-delete ของข้อความ (ตรงกลางจอ ไม่ใช่ browser popup) */}
+      {commentDeleteConfirm && (
+        <div className="drive-overlay" onClick={() => !deletingComment && setCommentDeleteConfirm(false)}>
+          <div className="drive-confirm" onClick={(e) => e.stopPropagation()}>
+            <div className="drive-confirm-icon">🗑️</div>
+            <h3>ลบคอมเมนต์นี้?</h3>
+            <p>"{msg.comment}"</p>
+            <div className="drive-confirm-actions">
+              <button className="btn-cancel" autoFocus onClick={() => setCommentDeleteConfirm(false)} disabled={deletingComment}>
+                ยกเลิก
+              </button>
+              <button
+                className="btn-confirm-delete"
+                disabled={deletingComment}
+                onClick={async () => {
+                  setDeletingComment(true);
+                  try {
+                    await onUpdateComment(msg.messageId, "");
+                    setCommentDeleteConfirm(false);
+                  } catch (err) {
+                    alert(err.message || "ลบไม่สำเร็จ");
+                  } finally {
+                    setDeletingComment(false);
+                  }
+                }}
+              >
+                {deletingComment ? "กำลังลบ..." : "ลบเลย"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

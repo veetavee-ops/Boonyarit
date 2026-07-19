@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { checkAuth, logout, updateProfile } from "./api/auth";
 import { useGroups, useMessages } from "./hooks/useMessages";
 import { useSocket } from "./hooks/useSocket";
-import { summarizeDay, searchMessages, toggleImportant, deleteMessages, forwardMessages, sendDirectMessage, askAssistant, checkCommand, testOcr } from "./api/messages";
+import { summarizeDay, searchMessages, toggleImportant, updateMessageComment, deleteMessages, forwardMessages, sendDirectMessage, askAssistant, checkCommand, testOcr } from "./api/messages";
 import LoginPage from "./pages/LoginPage";
 import RegisterPage from "./pages/RegisterPage";
 import ForgotPasswordPage from "./pages/ForgotPasswordPage";
 import ResetPasswordPage from "./pages/ResetPasswordPage";
 import DriveFilesPage from "./pages/DriveFilesPage";
 import PaymentVerificationPage from "./pages/PaymentVerificationPage";
+import DataBrowserPage from "./pages/DataBrowserPage";
 import DashboardPage from "./pages/DashboardPage";
 import AdminPanel from "./pages/AdminPanel";
 import Sidebar from "./components/Sidebar/Sidebar";
@@ -49,6 +50,7 @@ export default function App() {
   const [showDaySummary, setShowDaySummary] = useState(false);
   const [showDriveFiles, setShowDriveFiles] = useState(false);
   const [showPaymentVerification, setShowPaymentVerification] = useState(false);
+  const [showDataBrowser, setShowDataBrowser] = useState(false);
   // popup "กระโดดไปข้อความ" — เปิดจากลิงก์ผลค้นหาข้อความ
   const [jumpMessageId, setJumpMessageId] = useState(null);
   // กด "เข้าห้องแชทนี้เลย" ใน popup ด้านบน — ให้ ChatWindow โหลดข้อความรอบๆ ข้อความนี้แทน "ล่าสุด"
@@ -295,6 +297,12 @@ export default function App() {
     }
   };
 
+  const handleUpdateComment = async (messageId, comment) => {
+    const result = await updateMessageComment(messageId, comment);
+    updateMessage(messageId, { comment: result.comment });
+    return result;
+  };
+
   const groupsList = Array.isArray(groups) ? groups : [];
   // Dedup by groupId only — backend already groups by displayName
   const uniqueGroups = groupsList.filter(
@@ -450,6 +458,7 @@ export default function App() {
             searching={searching}
             onSelectGroup={(groupId) => { setSelectedGroup(groupId); setChatJumpMessageId(null); setSearch(''); }}
             onToggleImportant={handleToggleImportant}
+            onUpdateComment={handleUpdateComment}
             myLineUserId={admin.lineUserId}
             daysBack={daysBack}
             onDaysBackChange={setDaysBack}
@@ -486,6 +495,7 @@ export default function App() {
           }}
           onOpenDriveFiles={() => setShowDriveFiles(true)}
           onOpenPaymentVerification={admin?.role === 'superuser' ? () => setShowPaymentVerification(true) : undefined}
+          onOpenDataBrowser={admin?.role === 'superuser' ? () => setShowDataBrowser(true) : undefined}
           onPinChange={setPinnedSidebarWidth}
         />
         <SummarySidebar
@@ -518,6 +528,10 @@ export default function App() {
 
       {showPaymentVerification && (
         <PaymentVerificationPage onClose={() => setShowPaymentVerification(false)} />
+      )}
+
+      {showDataBrowser && (
+        <DataBrowserPage onClose={() => setShowDataBrowser(false)} />
       )}
 
       {jumpMessageId && (

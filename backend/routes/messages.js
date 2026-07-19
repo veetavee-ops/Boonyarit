@@ -834,8 +834,32 @@ router.patch('/:messageId/important', async (req, res) => {
   }
 });
 
+// PATCH /api/messages/:messageId/comment — ตั้ง/แก้/ลบคอมเมนต์ที่ user เพิ่มเองให้สื่อ (ช่วยค้นหาทีหลัง)
+router.patch('/:messageId/comment', async (req, res) => {
+  try {
+    const { comment } = req.body;
+    const msg = await Message.findOne({ where: { messageId: req.params.messageId } });
+    if (!msg) return res.status(404).json({ error: 'ไม่พบข้อความ' });
+
+    if (req.admin.role === 'user') {
+      const allowed = await getAllowedGroupIds(req.admin.id);
+      const scopeId = msg.groupId || `private_${msg.userId}`;
+      if (!allowed.includes(scopeId)) {
+        return res.status(403).json({ error: 'ไม่มีสิทธิ์' });
+      }
+    }
+
+    msg.comment = (comment || '').trim() || null;
+    await msg.save();
+    res.json({ messageId: msg.messageId, comment: msg.comment });
+  } catch (error) {
+    console.error('[ERROR] PATCH /api/messages/:messageId/comment:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // GET /api/messages/search?q=...&limit=30
-// ค้นใน: text, ชื่อคนส่ง, ชื่อกลุ่ม, ชื่อไฟล์
+// ค้นใน: text, ชื่อคนส่ง, ชื่อกลุ่ม, ชื่อไฟล์, คอมเมนต์ที่ user เพิ่มเองให้สื่อ
 router.get('/search', async (req, res) => {
   try {
     const { q, limit = 30 } = req.query;
@@ -855,8 +879,10 @@ router.get('/search', async (req, res) => {
     const rows = await Message.sequelize.query(
       `SELECT
          m."messageId",
+         m."messageType",
          m."groupId",
          m.text,
+         m.comment,
          m.timestamp,
          m.metadata,
          g."groupName",
@@ -868,6 +894,7 @@ router.get('/search', async (req, res) => {
        WHERE ${groupFilter}
          AND (
            m.text                     ILIKE :term
+           OR m.comment                ILIKE :term
            OR u."displayName"         ILIKE :term
            OR g."groupName"           ILIKE :term
            OR m.metadata->>'fileName' ILIKE :term
