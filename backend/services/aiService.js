@@ -6,11 +6,6 @@ const GROQ_API_KEY = process.env.GROQ_API_KEY;
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions';
 
-// ── Gemini ──────────────────────────────────────────────────────────────────
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_MODEL = 'gemini-2.0-flash';
-const GEMINI_API = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-
 // ── Helper: แปลงข้อความแต่ละประเภทเป็น text ────────────────────────────────
 function formatMessageContent(m) {
   if (m.messageType === 'text') return m.text || '';
@@ -325,39 +320,6 @@ async function summarizeAllChatsForDate(allMessages, providerChain) {
   }
 }
 
-// ── Vision: เรียก Gemini อ่านรูป ─────────────────────────────────────────────
-async function callGeminiVision(prompt, imageBuffers) {
-  if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY ยังไม่ได้ตั้งค่าใน .env');
-
-  const parts = [
-    { text: prompt },
-    ...imageBuffers.map(buf => ({
-      inlineData: { mimeType: 'image/jpeg', data: buf.toString('base64') },
-    })),
-  ];
-
-  try {
-    const response = await axios.post(
-      `${GEMINI_API}?key=${GEMINI_API_KEY}`,
-      {
-        contents: [{ role: 'user', parts }],
-        generationConfig: { maxOutputTokens: 4096, temperature: 0.1 },
-      },
-      { headers: { 'Content-Type': 'application/json' } }
-    );
-
-    return {
-      text: response.data.candidates[0].content.parts[0].text,
-      modelLabel: `Gemini ${GEMINI_MODEL} (vision)`,
-    };
-  } catch (err) {
-    const status = err.response?.status;
-    const msg = err.response?.data?.error?.message || err.message;
-    console.error(`❌ Gemini Vision API error [${status}]:`, msg);
-    throw err;
-  }
-}
-
 // ── Vision: เรียก provider แบบ OpenAI-compatible ที่ user เพิ่มเอง+ติ๊ก "รองรับรูปภาพ" ──
 // โครงเดียวกับ callOpenAiCompatible แต่ content เป็น multimodal (text + image_url) — ใช้เป็น
 // fallback แทน Groq vision เดิม (โมเดล meta-llama/llama-4-scout-17b-16e-instruct ถูกถอดออกจาก
@@ -455,14 +417,7 @@ async function extractPaymentDocuments(imageBufferA, imageBufferB, visionChain =
 - "bankEndingBalance" คือยอดเงินคงเหลือล่าสุดที่แสดงในสกรีนธนาคาร (ถ้ามี)
 - ถ้าไม่พบรูปแบบใดรูปแบบหนึ่ง (เช่นมีแต่รูปธนาคาร) ให้ array ของอีกฝั่งเป็น [] และ bankEndingBalance เป็น null`;
 
-  let result;
-  try {
-    result = await callGeminiVision(prompt, [imageBufferA, imageBufferB]);
-  } catch (primaryError) {
-    console.warn(`⚠️ Gemini vision failed: ${primaryError.message} — ลองใช้ provider ที่รองรับรูปภาพแทน`);
-    result = await callProviderChainVision(prompt, visionChain, [imageBufferA, imageBufferB]);
-    if (!result.modelLabel.includes('(fallback)')) result.modelLabel += ' (fallback)';
-  }
+  const result = await callProviderChainVision(prompt, visionChain, [imageBufferA, imageBufferB]);
 
   console.log(`✅ Payment documents extracted by ${result.modelLabel}`);
 
@@ -607,14 +562,7 @@ async function extractReceiptSummary(imageBuffers, visionChain = []) {
 - "totalAmount" คือยอดรวมสุทธิที่ต้องจ่ายจริง (grand total / ยอดชำระ) ไม่ใช่ยอดก่อนหักส่วนลดหรือก่อนภาษี
 - ถ้ารูปที่ส่งมาไม่ใช่ใบเสร็จ/บิลซื้อของเลย ให้ storeName เป็น null และ items เป็น []`;
 
-  let result;
-  try {
-    result = await callGeminiVision(prompt, imageBuffers);
-  } catch (primaryError) {
-    console.warn(`⚠️ Gemini vision failed: ${primaryError.message} — ลองใช้ provider ที่รองรับรูปภาพแทน`);
-    result = await callProviderChainVision(prompt, visionChain, imageBuffers);
-    if (!result.modelLabel.includes('(fallback)')) result.modelLabel += ' (fallback)';
-  }
+  const result = await callProviderChainVision(prompt, visionChain, imageBuffers);
 
   console.log(`✅ Receipt summary extracted by ${result.modelLabel}`);
 
@@ -662,14 +610,7 @@ async function extractTransferSlip(imageBuffers, visionChain = [], referenceName
 - ถ้าหาชื่อนี้ไม่เจอในทั้ง 2 ฝั่งเลย หรือไม่แน่ใจ → direction = null, referenceNameMatched = null (ห้ามเดา)
 - ถ้าอ่านตัวเลข amount ไม่ชัด ให้ใส่ค่าที่อ่านได้ดีที่สุด อย่าใส่ null ถ้าพอเดาได้จากบริบท`;
 
-  let result;
-  try {
-    result = await callGeminiVision(prompt, imageBuffers);
-  } catch (primaryError) {
-    console.warn(`⚠️ Gemini vision failed: ${primaryError.message} — ลองใช้ provider ที่รองรับรูปภาพแทน`);
-    result = await callProviderChainVision(prompt, visionChain, imageBuffers);
-    if (!result.modelLabel.includes('(fallback)')) result.modelLabel += ' (fallback)';
-  }
+  const result = await callProviderChainVision(prompt, visionChain, imageBuffers);
 
   console.log(`✅ Transfer slip extracted by ${result.modelLabel}`);
 
@@ -710,14 +651,7 @@ async function extractWrittenBalance(imageBuffer, visionChain = []) {
 - ถ้าลายมืออ่านยากจนไม่มั่นใจ ให้ confident: false แต่ยังคงต้องใส่ตัวเลขที่อ่านได้ดีที่สุดใน balance (ห้ามใส่ null)
 - อ่านเฉพาะแถวล่างสุดที่มีตัวเลขเขียนไว้จริงเท่านั้น อย่าอ่านแถวว่างที่ยังไม่มีการกรอก`;
 
-  let result;
-  try {
-    result = await callGeminiVision(prompt, [imageBuffer]);
-  } catch (primaryError) {
-    console.warn(`⚠️ Gemini vision failed: ${primaryError.message} — ลองใช้ provider ที่รองรับรูปภาพแทน`);
-    result = await callProviderChainVision(prompt, visionChain, [imageBuffer]);
-    if (!result.modelLabel.includes('(fallback)')) result.modelLabel += ' (fallback)';
-  }
+  const result = await callProviderChainVision(prompt, visionChain, [imageBuffer]);
 
   console.log(`✅ Written balance extracted by ${result.modelLabel}`);
 

@@ -26,7 +26,7 @@ async function resolveProviderChain(providerSelector) {
 
 // ── chain สำหรับงาน OCR (สรุปบิล/ตรวจสอบการโอน-ตั้งเบิก) — กรองเฉพาะ provider ที่ user ติ๊ก
 // "รองรับรูปภาพ" ไว้ (supportsVision) เรียงตาม priority เดียวกับ chain สรุปแชท แต่เป็นคนละ subset กัน
-// ใช้เป็น fallback ต่อจาก Gemini native vision (callGeminiVision) ที่ยังลองก่อนเสมอ — ถ้าไม่มี provider
+// นี่คือ source of truth เดียวสำหรับงาน vision ทั้งหมด (ไม่มี native call แยกแล้ว) — ถ้าไม่มี provider
 // ที่ติ๊กไว้เลย คืน [] แล้วปล่อยให้ callProviderChainVision โยน error ที่อ่านง่ายเอง
 async function resolveVisionProviderChain() {
     const providers = await AiProvider.findAll({ where: { supportsVision: true }, order: [['priority', 'ASC']] });
